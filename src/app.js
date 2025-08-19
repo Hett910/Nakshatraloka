@@ -5,6 +5,7 @@ const helmet = require('helmet')
 const hpp = require('hpp');
 const createError = require('http-errors');
 const rateLimiter = require('express-rate-limit');
+const MasterRouter = require('./router/MasterRoute.js') 
 
 
 dotenv.config();
@@ -32,6 +33,8 @@ app.use(rateLimiter({
     standardHeaders: true,
     legacyHeaders: false,
 }))
+
+app.use("/", MasterRouter);
 
 // Default Router Message
 app.get("/", (req, res) => {
