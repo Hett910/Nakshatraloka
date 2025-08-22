@@ -114,14 +114,22 @@ const getCatogaryById = async (req, res) => {
 }
 
 const deleteCategory = async (req, res) => {
+    if (req.user.role !== "admin") {
+        console.log(req.user.role)
+        res.status(401).json({
+            success: false,
+            message: 'Access Forbidden'
+        })
+    }
     try {
         const { id } = req.params;
         const { updatedBy } = req.body;
         const query = `
-      UPDATE "CatogaryMaster" 
-      SET "IsActive" = FALSE, "Updated_Date" = CURRENT_TIMESTAMP, "Updated_By" = $2
-      WHERE "ID" = $1;
-    `;
+                UPDATE "CatogaryMaster" 
+                SET "IsActive" = FALSE, "Updated_Date" = CURRENT_TIMESTAMP, "Updated_By" = $2
+                WHERE "ID" = $1;
+            `;
+
 
         const result = await pool.query(query, [id, updatedBy]);
 
