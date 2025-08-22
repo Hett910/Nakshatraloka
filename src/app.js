@@ -8,8 +8,9 @@ const rateLimiter = require('express-rate-limit');
 const MasterRouter = require('./router/MasterRoute.js') 
 
 
-dotenv.config();
+dotenv.config({debug: false});
 const app = express();
+
 
 // Disable Express signature
 app.disable("x-powered-by");
