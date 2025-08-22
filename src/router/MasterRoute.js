@@ -1,10 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const Catogary = require('../router/Category/Category.route');
+const Config = require('../router/Config/Config.route');
+const User = require('../router/User/User.route');
 
 router.use(
     '/api',
-    Catogary
+    Catogary,
+    Config,
+    User
 )
 
 module.exports = router;
