@@ -200,20 +200,6 @@ const UpdatePassword = async (req, res) => {
     }
 };
 
-
-const logout = async (req, res) => {
-    try {
-    } catch (error) {
-        console.error('Error in logout user password:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Internal Server Error',
-            error: error.message
-        });
-    }
-}
-
-
 module.exports = {
     User: {
         saveUser,
