@@ -13,12 +13,10 @@ const auth = async (req, res, next) => {
             if (err) {
                 return res.status(403).json({ message: "Invalid or expired token" });
             }
-            req.user = decoded; 
+            req.user = decoded;
+            next();
         });
-        
-        console.log({data: req.user})
-        next();
-        // next()
+
     } catch (error) {
         res.status(401).json({ message: error.message })
         res.status(401).json({
