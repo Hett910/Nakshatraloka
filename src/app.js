@@ -2,6 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const helmet = require('helmet')
+const passport = require('passport');
 const hpp = require('hpp');
 const createError = require('http-errors');
 const rateLimiter = require('express-rate-limit');
@@ -36,6 +37,8 @@ app.use(rateLimiter({
 }))
 
 app.use("/", MasterRouter);
+
+app.use(passport.initialize());
 
 // Default Router Message
 app.get("/", (req, res) => {
