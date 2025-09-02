@@ -4,13 +4,15 @@ const Catogary = require('../router/Category/Category.route');
 const Config = require('../router/Config/Config.route');
 const User = require('../router/User/User.route');
 const Orders = require('../router/Orders/Orders.Route');
+const Google = require('../router/Google/Google.route');
 
 router.use(
     '/api',
     Catogary,
     Config,
     User,
-    Orders
+    Orders,
+    Google
 )
 
 module.exports = router;

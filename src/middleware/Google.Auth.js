@@ -4,7 +4,7 @@ require("dotenv").config();
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const jwt = require("jsonwebtoken");
-const pool = require("../../utils/PostgraceSql.Connection"); // PostgreSQL pool
+const pool = require("../utils/PostgraceSql.Connection"); // PostgreSQL pool
 
 passport.use(
     new GoogleStrategy(
