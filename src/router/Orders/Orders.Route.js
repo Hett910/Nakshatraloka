@@ -7,6 +7,9 @@ const router = express.Router();
 // Order
 router.post('/saveOrder', auth, Order.saveOrder);
 router.post('/listAllOrders', auth, Order.listAllOrders);
+router.post('/getOrderById/:id', auth, Order.getOrderById);
+router.post('/updateOrderStatus/:id/status', auth, Order.updateOrderStatus);
+// router.post('/getAllOrders', auth, Order.getAllOrders);
 
 // Wishlist
 router.post('/manageWishlist', auth, saveWishlist);
