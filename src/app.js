@@ -2,13 +2,16 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const helmet = require('helmet')
+const passport = require('passport');
 const hpp = require('hpp');
 const createError = require('http-errors');
 const rateLimiter = require('express-rate-limit');
+const MasterRouter = require('./router/MasterRoute.js') 
 
 
-dotenv.config();
+dotenv.config({debug: false});
 const app = express();
+
 
 // Disable Express signature
 app.disable("x-powered-by");
@@ -33,6 +36,10 @@ app.use(rateLimiter({
     legacyHeaders: false,
 }))
 
+app.use("/", MasterRouter);
+
+app.use(passport.initialize());
+
 // Default Router Message
 app.get("/", (req, res) => {
     res.json({
@@ -50,6 +57,7 @@ app.use(async (req, res, next) => {
 // Error Handler
 app.use((error, req, res, next) => {
     const status = error.status || 500;
+    console.log("Error:", error);
     res.status(status).json({
         success: false,
         message: status === 500 ? "Internal Server Error" : error.message
