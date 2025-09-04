@@ -5,6 +5,7 @@ const Config = require('../router/Config/Config.route');
 const User = require('../router/User/User.route');
 const Orders = require('../router/Orders/Orders.Route');
 const Google = require('../router/Google/Google.route');
+const Coupon  = require('../router/Coupon/Coupon.Route');
 
 router.use(
     '/api',
@@ -12,7 +13,8 @@ router.use(
     Config,
     User,
     Orders,
-    Google
+    Google,
+    Coupon
 )
 
 module.exports = router;
