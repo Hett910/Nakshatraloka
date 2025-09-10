@@ -21,7 +21,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // for form data
 
 // Allowing cors
-app.use(cors({ origin: process.env.CLIENT_URL, credentials: true, methods: ['GET', 'POST', 'PATCH', 'DELETE'] }));
+app.use(cors({ origin: "*", credentials: true, methods: ['GET', 'POST', 'PATCH', 'DELETE'] }));
+// app.use(cors({ origin: process.env.CLIENT_URL, credentials: true, methods: ['GET', 'POST', 'PATCH', 'DELETE'] }));
 
 
 // for security and sanitazation of request

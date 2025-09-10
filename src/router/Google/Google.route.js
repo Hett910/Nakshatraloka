@@ -17,6 +17,8 @@ router.get(
       // ✅ req.user is { user, token } from googleAuth.js
       const { user, token } = req.user;
 
+      res.redirect(`http://localhost:5173/auth/success?token=${token}`);
+
       res.json({
         success: true,
         message: "Google login successful",
