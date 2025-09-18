@@ -1,6 +1,7 @@
 const pool = require('../../utils/PostgraceSql.Connection');
 const fs = require('fs');
 const path = require("path");
+const { redis } = require("../../utils/redisClient.js"); // import redis instance ✅ use shared redis client
 
 // ---------- Save / Update Product ----------
 // const saveProduct = async (req, res) => {
@@ -226,20 +227,40 @@ const saveProduct = async (req, res) => {
 
 
 // ---------- Get All Products ----------
+// ✅ Get All Products with Redis cache
 const getAllProducts = async (req, res) => {
-
-
     try {
-        const { rows } = await pool.query(`SELECT * FROM fn_get_products();`);
-        if (!rows.length) {
-            return res.json({ success: false, message: 'No products found' });
+        const cacheKey = "products:all";
+
+        // 1️⃣ Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            console.log("⚡ Serving all products from Redis cache");
+            return res.json(JSON.parse(cachedData));
         }
-        res.json({ success: true, data: rows });
+
+        // 2️⃣ Fetch from PostgreSQL
+        const { rows } = await pool.query(`SELECT * FROM fn_get_products();`);
+
+        if (!rows.length) {
+            return res.json({ success: false, message: "No products found" });
+        }
+
+        const responseData = { success: true, data: rows };
+
+        // 3️⃣ Store in Redis for 1 hour
+        await redis.setEx(cacheKey, 3600, JSON.stringify(responseData));
+
+        res.json(responseData);
     } catch (error) {
-        console.error('Error fetching products:', error);
-        res.status(500).json({ success: false, message: `Get Products Error: ${error.message}` });
+        console.error("Error fetching products:", error);
+        res.status(500).json({
+            success: false,
+            message: `Get Products Error: ${error.message}`,
+        });
     }
 };
+
 
 // ---------- Get Product by ID ----------
 // const getProductById = async (req, res) => {
@@ -256,36 +277,60 @@ const getAllProducts = async (req, res) => {
 //     }
 // };
 
+// ✅ Get Product By ID with Redis cache
 const getProductById = async (req, res) => {
     try {
         const productId = parseInt(req.params.id);
+
+        // 1️⃣ Cache key per product
+        const cacheKey = `product:${productId}`;
+
+        // 2️⃣ Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            console.log(`⚡ Serving product ${productId} from Redis cache`);
+            return res.json(JSON.parse(cachedData));
+        }
+
+        // 3️⃣ Fetch from PostgreSQL
         const { rows } = await pool.query(
             `SELECT * FROM fn_get_product_by_id($1);`,
             [productId]
         );
 
         if (!rows.length) {
-            return res.status(404).json({ success: false, message: 'Product not found' });
+            return res
+                .status(404)
+                .json({ success: false, message: "Product not found" });
         }
 
         const product = rows[0].product;
 
-        // ✅ Format images
+        // 4️⃣ Format images
         if (product.images && Array.isArray(product.images)) {
-            product.images = product.images.map(img => ({
+            product.images = product.images.map((img) => ({
                 ...img,
                 imageData: img.imageData
                     ? `http://localhost:8001/uploads/${img.imageData}`
-                    : null
+                    : null,
             }));
         }
 
-        res.json({ success: true, data: { product } });
+        const responseData = { success: true, data: { product } };
+
+        // 5️⃣ Cache result for 1 hour
+        await redis.setEx(cacheKey, 3600, JSON.stringify(responseData));
+
+        res.json(responseData);
     } catch (error) {
-        console.error('Error fetching product:', error);
-        res.status(500).json({ success: false, message: `Get Product Error: ${error.message}` });
+        console.error("Error fetching product:", error);
+        res.status(500).json({
+            success: false,
+            message: `Get Product Error: ${error.message}`,
+        });
     }
 };
+
 
 // ---------- Soft Delete Product ----------
 const deleteProduct = async (req, res) => {
@@ -313,46 +358,112 @@ const deleteProduct = async (req, res) => {
     }
 };
 
+// ✅ Get 4 Products for Screen with Redis cache
 const GetProductForScreen = async (req, res) => {
     try {
-        const { rows } = await pool.query(`SELECT * FROM "V_Four_Product";`);
-        if (!rows.length) {
-            return res.json({ success: false, message: 'No products found' });
+        const cacheKey = "products:four";
+
+        // 1️⃣ Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            console.log("⚡ Serving 4 products from Redis cache");
+            return res.json(JSON.parse(cachedData));
         }
-        res.json({ success: true, data: rows });
+
+        // 2️⃣ Fetch from PostgreSQL
+        const { rows } = await pool.query(`SELECT * FROM "V_Four_Product";`);
+
+        if (!rows.length) {
+            return res.json({ success: false, message: "No products found" });
+        }
+
+        const responseData = { success: true, data: rows };
+
+        // 3️⃣ Cache result for 1 hour (3600s)
+        await redis.setEx(cacheKey, 3600, JSON.stringify(responseData));
+
+        res.json(responseData);
+
     } catch (error) {
-        console.error('Fetch 4 products Error:', error);
-        res.status(500).json({ success: false, message: `Fetch 4 products Errorr: ${error.message}` });
+        console.error("Fetch 4 products Error:", error);
+        res.status(500).json({
+            success: false,
+            message: `Fetch 4 products Error: ${error.message}`,
+        });
     }
 };
 
 
+
+// ✅ Get Four Categories with Redis cache
 const GetFourCategories = async (req, res) => {
     try {
-        const { rows } = await pool.query(`SELECT * FROM "V_Four_Categories";`);
-        if (!rows.length) {
-            return res.json({ success: false, message: 'No categories found' });
+        const cacheKey = "categories:four";
+
+        // 1️⃣ Check Redis cache first
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            console.log("⚡ Serving 4 categories from Redis cache");
+            return res.json(JSON.parse(cachedData));
         }
-        res.json({ success: true, data: rows });
+
+        // 2️⃣ Fetch from DB if not cached
+        const { rows } = await pool.query(`SELECT * FROM "V_Four_Categories";`);
+
+        if (!rows.length) {
+            return res.json({ success: false, message: "No categories found" });
+        }
+
+        const responseData = { success: true, data: rows };
+
+        // 3️⃣ Cache the result for 1 hour (3600 seconds)
+        await redis.setEx(cacheKey, 3600, JSON.stringify(responseData));
+
+        res.json(responseData);
+
     } catch (error) {
-        console.error('Fetch 4 categories Error:', error);
-        res.status(500).json({ success: false, message: `Fetch 4 categories Error: ${error.message}` });
+        console.error("Fetch 4 categories Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Error fetching categories"
+        });
     }
 };
 
 
+
+// ✅ Get Gemstone Products with Redis cache
 const GetGemstoneProducts = async (req, res) => {
     try {
-        const query = `SELECT * FROM "V_Get_Gemstone_Details";`;
+        const cacheKey = "products:gemstones";
 
+        // 1️⃣ Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            console.log("⚡ Serving gemstone products from Redis cache");
+            return res.json(JSON.parse(cachedData));
+        }
+
+        // 2️⃣ Fetch from PostgreSQL
+        const query = `SELECT * FROM "V_Get_Gemstone_Details";`;
         const { rows } = await pool.query(query);
 
-        res.json({ success: true, data: rows });
+        const responseData = { success: true, data: rows };
+
+        // 3️⃣ Cache result for 1 hour (3600s)
+        await redis.setEx(cacheKey, 3600, JSON.stringify(responseData));
+
+        res.json(responseData);
+
     } catch (error) {
         console.error("Fetch gemstone products error:", error);
-        res.status(500).json({ success: false, message: "Error fetching gemstone products" });
+        res.status(500).json({
+            success: false,
+            message: "Error fetching gemstone products"
+        });
     }
 };
+
 
 
 // const GetProductDetails = async (req, res) => {
@@ -389,59 +500,83 @@ const GetGemstoneProducts = async (req, res) => {
 
 // getProductsByCategory.js
 
+// ✅ Get Product Details with Redis cache
 const GetProductDetails = async (req, res) => {
     try {
         const { productId } = req.params;
 
-        // 1) Fetch product
+        if (!productId) {
+            return res.status(400).json({ success: false, message: "ProductID is required" });
+        }
+
+        const cacheKey = `product:details:${productId}`;
+
+        // 1️⃣ Check cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            console.log("⚡ Serving Product Details from Redis cache");
+            return res.json(JSON.parse(cachedData));
+        }
+
+        // 2️⃣ Fetch product
         const productQuery = `
-            SELECT *
-            FROM "ProductMaster"
-            WHERE "ID" = $1 AND "IsActive" = TRUE;
-        `;
+      SELECT *
+      FROM "ProductMaster"
+      WHERE "ID" = $1 AND "IsActive" = TRUE;
+    `;
         const { rows: product } = await pool.query(productQuery, [productId]);
 
         if (!product.length) {
             return res.status(404).json({ success: false, message: "Product not found" });
         }
 
-        // 2) Fetch product images
+        // 3️⃣ Fetch product images
         const imagesQuery = `
-            SELECT encode("Image", 'base64') AS "ImageBase64",
-                   "Alt_Text",
-                   "IsPrimary"
-            FROM "ProductImages"
-            WHERE "ProductID" = $1 AND "IsActive" = TRUE
-            ORDER BY "IsPrimary" DESC, "ID";
-        `;
+      SELECT encode("Image", 'base64') AS "ImageBase64",
+             "Alt_Text",
+             "IsPrimary"
+      FROM "ProductImages"
+      WHERE "ProductID" = $1 AND "IsActive" = TRUE
+      ORDER BY "IsPrimary" DESC, "ID";
+    `;
         const { rows: images } = await pool.query(imagesQuery, [productId]);
 
-        // 3) Fetch ratings (avg + count)
+        // 4️⃣ Fetch ratings (avg + count)
         const ratingQuery = `
-            SELECT 
-                COALESCE(AVG("Rating"), 0)::NUMERIC(2,1) AS "AvgRating",
-                COUNT(*) AS "ReviewCount"
-            FROM "ProductReview"
-            WHERE "ProductID" = $1 AND "IsActive" = TRUE;
-        `;
+      SELECT 
+          COALESCE(AVG("Rating"), 0)::NUMERIC(2,1) AS "AvgRating",
+          COUNT(*) AS "ReviewCount"
+      FROM "ProductReview"
+      WHERE "ProductID" = $1 AND "IsActive" = TRUE;
+    `;
         const { rows: ratings } = await pool.query(ratingQuery, [productId]);
 
-        res.json({
+        // 5️⃣ Prepare response
+        const responseData = {
             success: true,
             product: product[0],
             images,
-            ratings: ratings[0]  // { AvgRating: 4.2, ReviewCount: 15 }
-        });
+            ratings: ratings[0], // { AvgRating: 4.2, ReviewCount: 15 }
+        };
+
+        // 6️⃣ Cache in Redis (10 min TTL for product details)
+        await redis.setEx(cacheKey, 600, JSON.stringify(responseData));
+
+        res.json(responseData);
 
     } catch (error) {
         console.error("Fetch product details error:", error);
-        res.status(500).json({ success: false, message: "Error fetching product details" });
+        res.status(500).json({
+            success: false,
+            message: "Error fetching product details"
+        });
     }
 };
 
 
-    // getProductsByCategory.js
-  const GetProductsByCategory = async (req, res) => {
+
+// ✅ Get Products By Category with Redis Cache
+const GetProductsByCategory = async (req, res) => {
     const client = await pool.connect();
     try {
         const { categoryName, page = 1, limit = 20 } = req.body;
@@ -450,11 +585,21 @@ const GetProductDetails = async (req, res) => {
             return res.status(400).json({ success: false, message: "Valid categoryName is required" });
         }
 
-        const categoryNameClean = `%${categoryName.trim()}%`; // Added % for pattern matching if needed
+        const categoryNameClean = `%${categoryName.trim()}%`; // pattern matching
         const pageNum = Number(page) > 0 ? Number(page) : 1;
         const limitNum = Number(limit) > 0 ? Number(limit) : 20;
         const offset = (pageNum - 1) * limitNum;
 
+        // 🔑 Redis cache key
+        const cacheKey = `products:category:${categoryName.trim().toLowerCase()}:page:${pageNum}:limit:${limitNum}`;
+
+        // 🔹 1) Try Redis first
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            return res.json(JSON.parse(cachedData));
+        }
+
+        // 🔹 2) If no cache, query DB
         const sql = `
             SELECT * FROM fn_get_products_by_category($1)
             ORDER BY "ProductID" ASC
@@ -466,13 +611,18 @@ const GetProductDetails = async (req, res) => {
             return res.status(404).json({ success: false, message: `No products found for category ${categoryName.trim()}` });
         }
 
-        res.json({
+        const response = {
             success: true,
             page: pageNum,
             limit: limitNum,
             count: rows.length,
             products: rows
-        });
+        };
+
+        // 🔹 3) Save result in Redis (set TTL for freshness, e.g., 300 sec = 5 min)
+        await redis.setEx(cacheKey, 300, JSON.stringify(response));
+
+        res.json(response);
     } catch (error) {
         console.error("Get Products Error:", error);
         res.status(500).json({ success: false, message: `Get Products Error: ${error.message}` });
@@ -482,7 +632,7 @@ const GetProductDetails = async (req, res) => {
 };
 
 
-// ✅ Toggle Featured Product
+// ✅ Toggle Featured Product with Redis cache invalidation
 const toggleFeaturedProduct = async (req, res) => {
     if (!req.user || req.user.role !== "admin") {
         return res.status(403).json({ success: false, message: "Access Denied" });
@@ -528,6 +678,13 @@ const toggleFeaturedProduct = async (req, res) => {
             [newState, req.user.id, id]
         );
 
+        // ✅ Invalidate relevant cache keys
+        await Promise.all([
+            redis.del("products:active:names"),
+            redis.del("products:featured"),
+            redis.del(`product:${id}`)
+        ]);
+
         res.json({
             success: true,
             message: `Product ${newState ? "featured" : "removed from featured"} successfully`
@@ -566,54 +723,89 @@ const getFeaturedProducts = async (req, res) => {
 
 
 const getProductWithName = async (req, res) => {
+    const cacheKey = "products:active:names"; // 🔑 unique key for this query
+
     try {
+        // 1️⃣ Check cache first
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            console.log("⚡ Serving products from Redis cache");
+            return res.json(JSON.parse(cachedData));
+        }
+
+        // 2️⃣ Query DB if not cached
         const query = `SELECT "ID","Name" FROM "ProductMaster" WHERE "IsActive" = TRUE;`;
         const result = await pool.query(query);
-        res.json({
+
+        const responseData = {
             success: true,
-            data: result.rows
-        });
-    }
-    catch (err) {
-        console.error("Error fetching featured products:", err);
+            data: result.rows,
+        };
+
+        // 3️⃣ Save result in Redis with TTL (e.g., 10 mins)
+        await redis.set(cacheKey, JSON.stringify(responseData), { EX: 600 });
+
+        res.json(responseData);
+    } catch (err) {
+        console.error("❌ Error fetching products with name:", err);
         res.status(500).json({
             success: false,
-            message: "Server Error"
+            message: "Server Error: " + err.message,
         });
     }
-}
+    finally {
+        pool.release();
+    }
+};
 
 
 const getFilteredProducts = async (req, res) => {
-
     const client = await pool.connect();
     try {
-        // Extract filters from query parameters
+        // 📌 Extract filters from query parameters
         const minPrice = req.query.minPrice ? parseFloat(req.query.minPrice) : null;
         const maxPrice = req.query.maxPrice ? parseFloat(req.query.maxPrice) : null;
         const categoryName = req.query.categoryName || null;
         const rating = req.query.rating ? parseFloat(req.query.rating) : null;
 
-        const query = `
-            SELECT * FROM public.get_filtered_products($1, $2, $3, $4);
-        `;
-        const values = [minPrice, maxPrice, categoryName, rating];
+        // 📌 Create unique cache key for given filters
+        const cacheKey = `filtered_products:min=${minPrice || "null"}:max=${maxPrice || "null"
+            }:cat=${categoryName || "null"}:rating=${rating || "null"}`;
 
+        // 1️⃣ Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            console.log("⚡ Serving filtered products from Redis cache");
+            return res.json(JSON.parse(cachedData));
+        }
+
+        // 2️⃣ Query DB if not cached
+        const query = `
+      SELECT * 
+      FROM public.get_filtered_products($1, $2, $3, $4);
+    `;
+        const values = [minPrice, maxPrice, categoryName, rating];
         const result = await client.query(query, values);
 
-        res.json({
+        const responseData = {
             success: true,
-            data: result.rows
-        });
+            filters: { minPrice, maxPrice, categoryName, rating },
+            data: result.rows,
+        };
+
+        // 3️⃣ Save to Redis with TTL (5 mins)
+        await redis.set(cacheKey, JSON.stringify(responseData), { EX: 300 });
+
+        res.json(responseData);
     } catch (err) {
-        console.error("Error fetching filtered products:", err);
-        res.status(500).json({ success: false, message: "Server Error" });
+        console.error("❌ Error fetching filtered products:", err);
+        res
+            .status(500)
+            .json({ success: false, message: "Server Error: " + err.message });
     } finally {
-        client.release();
+        client.release(); // ✅ always release
     }
 };
-
-
 
 module.exports = {
     Product: {

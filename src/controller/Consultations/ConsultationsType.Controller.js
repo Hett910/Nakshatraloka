@@ -1,4 +1,5 @@
 const pool = require("../../utils/PostgraceSql.Connection");
+const { redis } = require("../../utils/redisClient");
 
 // ✅ Create Consultation Type
 const saveConsultationType = async (req, res) => {
@@ -53,42 +54,84 @@ const saveConsultationType = async (req, res) => {
 };
 
 
-// ✅ Get All
+// ✅ Get all consultation types with Redis caching
 const getAllConsultationTypes = async (req, res) => {
-    const client = await pool.connect();
+    const cacheKey = "consultation_types:all";
+
     try {
-        const result = await client.query(
-            `SELECT * FROM public."Consultations Types" WHERE "IsActive" = TRUE ORDER BY "ID" ASC`
-        );
-        res.status(200).json({ success: true, data: result.rows });
+        // 1️⃣ Check cache first
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            return res.json(JSON.parse(cachedData));
+        }
+
+        // 2️⃣ Query database if not cached
+        const client = await pool.connect();
+        try {
+            const result = await client.query(
+                `SELECT * FROM public."Consultations Types" 
+         WHERE "IsActive" = TRUE 
+         ORDER BY "ID" ASC`
+            );
+
+            if (!result.rows.length) {
+                return res.status(404).json({ success: false, message: "No consultation types found" });
+            }
+
+            const responseData = { success: true, data: result.rows };
+
+            // 3️⃣ Store result in Redis for 5 minutes
+            await redis.setEx(cacheKey, 300, JSON.stringify(responseData));
+
+            return res.json(responseData);
+        } finally {
+            client.release();
+        }
     } catch (error) {
         console.error("Error fetching consultation types:", error);
-        res.status(500).json({ success: false, message: "Server Error" });
-    } finally {
-        client.release();
+        return res.status(500).json({ success: false, message: "Server Error", error: error.message });
     }
 };
 
-// ✅ Get by ID
-const getConsultationTypeById = async (req, res) => {
-    const client = await pool.connect();
-    try {
-        const { id } = req.params;
-        const result = await client.query(
-            `SELECT * FROM public."Consultations Types" WHERE "ID" = $1 AND "IsActive" = TRUE`,
-            [id]
-        );
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({ success: false, message: "Not Found" });
+// ✅ Get Consultation Type by ID with Redis caching
+const getConsultationTypeById = async (req, res) => {
+    const { id } = req.params;
+    const cacheKey = `consultation_type:${id}`;
+
+    try {
+        // 1️⃣ Check Redis cache first
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            console.log("⚡ Serving consultation type from Redis cache");
+            return res.json(JSON.parse(cachedData));
         }
 
-        res.status(200).json({ success: true, data: result.rows[0] });
+        // 2️⃣ Query database if not cached
+        const client = await pool.connect();
+        try {
+            const result = await client.query(
+                `SELECT * FROM public."Consultations Types" 
+         WHERE "ID" = $1 AND "IsActive" = TRUE`,
+                [id]
+            );
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, message: "Not Found" });
+            }
+
+            const responseData = { success: true, data: result.rows[0] };
+
+            // 3️⃣ Cache the result in Redis for 5 minutes
+            await redis.setEx(cacheKey, 300, JSON.stringify(responseData));
+
+            return res.json(responseData);
+        } finally {
+            client.release();
+        }
     } catch (error) {
         console.error("Error fetching consultation type:", error);
-        res.status(500).json({ success: false, message: "Server Error" });
-    } finally {
-        client.release();
+        return res.status(500).json({ success: false, message: "Server Error", error: error.message });
     }
 };
 

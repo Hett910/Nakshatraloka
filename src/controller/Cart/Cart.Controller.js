@@ -1,4 +1,5 @@
 const pool = require('../../utils/PostgraceSql.Connection');
+const { redis } = require('../../utils/redisClient');
 
 // const saveCart = async (req, res) => {
 //     const user = req.user;
@@ -270,30 +271,47 @@ const UpdateCartData = async (req, res) => {
 // };
 
 
+// ✅ List User Cart with Redis caching
 const listUserCart = async (req, res) => {
-    const user = req.user;
-    if (!user?.id) {
-        return res.status(403).json({ success: false, message: "Please log in first." });
+  const user = req.user;
+  if (!user?.id) {
+    return res.status(403).json({ success: false, message: "Please log in first." });
+  }
+
+  const cacheKey = `user_cart:${user.id}`;
+
+  try {
+    // 1️⃣ Check Redis cache first
+    const cachedData = await redis.get(cacheKey);
+    if (cachedData) {
+      return res.status(200).json(JSON.parse(cachedData));
     }
 
+    // 2️⃣ Query database if not cached
     const client = await pool.connect();
     try {
-        const query = `
-            SELECT *
-            FROM public.get_user_cart_products_v2($1);
-        `;
+      const query = `SELECT * FROM public.get_user_cart_products_v2($1);`;
+      const { rows } = await client.query(query, [user.id]);
 
-        const { rows } = await client.query(query, [user.id]);
+      const responseData = { success: true, data: rows };
 
-        return res.status(200).json({ success: true, data: rows });
-    } catch (error) {
-        console.error(`Error listing user cart: ${error}`);
-        return res.status(500).json({ success: false, message: 'Internal server error', error: error.message });
+      // 3️⃣ Store in Redis with TTL (e.g., 5 minutes)
+      await redis.setEx(cacheKey, 300, JSON.stringify(responseData));
+
+      return res.status(200).json(responseData);
     } finally {
-        client.release();
+      client.release();
     }
-};
 
+  } catch (error) {
+    console.error(`Error listing user cart:`, error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message
+    });
+  }
+};
 
 
 

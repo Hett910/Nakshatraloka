@@ -1,5 +1,6 @@
 const express = require("express");
 const pool = require("../../utils/PostgraceSql.Connection");
+const { redis } = require("../../utils/redisClient");
 
 
 // Save or update order
@@ -137,54 +138,62 @@ const saveOrder = async (req, res) => {
     }
 };
 
+// ✅ List all orders with Redis caching
 const listAllOrders = async (req, res) => {
-    try {
-        const user = req.user;
+  try {
+    const user = req.user;
 
-        if (user.role === "admin") {
-            const query = `
-                SELECT *
-                FROM "V_OrderDetails"
-                ORDER BY "OrderID" ASC
-            `;
-            const result = await pool.query(query);
-            return res.json({
-                success: true,
-                data: result.rows
-            });
-        } else if (user.role === "customer") {
-            const query = `
-                SELECT *
-                FROM "V_OrderDetails"
-                WHERE "UserID" = $1 AND "IsActive" = true
-                ORDER BY "OrderID" ASC
-            `;
-
-
-            const result = await pool.query(query, [user.id]);
-
-            return res.json({
-                success: true,
-                data: result.rows
-            });
-        } else {
-            return res.status(403).json({
-                success: false,
-                message: "Access Denied"
-            });
-        }
-    } catch (error) {
-        console.error("Save Order Error:", error);
-
-        // Extract the Postgres error message
-        const pgMessage = error?.message || "Internal Server Error";
-
-        return res.status(400).json({
-            success: false,
-            message: `List Order Error: ${pgMessage}`
-        });
+    if (!user || (user.role !== "admin" && user.role !== "customer")) {
+      return res.status(403).json({ success: false, message: "Access Denied" });
     }
-}
+
+    // 1️⃣ Create cache key
+    const cacheKey = user.role === "admin" ? `orders:all` : `orders:user:${user.id}`;
+
+    // 2️⃣ Check cache first
+    const cachedOrders = await redis.get(cacheKey);
+    if (cachedOrders) {
+      console.log(`⚡ Serving orders from Redis cache for ${user.role} ${user.id || "admin"}`);
+      return res.json(JSON.parse(cachedOrders));
+    }
+
+    // 3️⃣ Query database
+    let query, values = [];
+    if (user.role === "admin") {
+      query = `
+        SELECT *
+        FROM "V_OrderDetails"
+        ORDER BY "OrderID" ASC
+      `;
+    } else {
+      query = `
+        SELECT *
+        FROM "V_OrderDetails"
+        WHERE "UserID" = $1 AND "IsActive" = true
+        ORDER BY "OrderID" ASC
+      `;
+      values = [user.id];
+    }
+
+    const { rows } = await pool.query(query, values);
+
+    const responseData = { success: true, data: rows };
+
+    // 4️⃣ Cache the result for 10 minutes
+    await redis.setEx(cacheKey, 600, JSON.stringify(responseData));
+
+    return res.json(responseData);
+
+  } catch (error) {
+    console.error("List Orders Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: `List Orders Error: ${error?.message || "Internal Server Error"}`
+    });
+  }
+};
+
 
 // const getAllOrders = async (req, res) => {
 //     try {
@@ -232,44 +241,60 @@ const listAllOrders = async (req, res) => {
 // }
 
 
-// ✅ Get order by ID
+// ✅ Get order by ID with Redis caching
 const getOrderById = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const user = req.user;
-        console.log(user)
+  try {
+    const { id: orderId } = req.params;
+    const user = req.user;
 
-        if (user.role !== 'admin' && user.role !== 'customer') return res.status(403).json({ success: false, message: "Access Denied" });
-
-        const query = `
-            SELECT *
-            FROM "V_OrderDetails"
-            WHERE "OrderID" = $1
-        `;
-        const values = [id];
-
-        const result = await pool.query(query, values);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Order not found or access denied."
-            });
-        }
-
-        return res.json({
-            success: true,
-            data: result.rows[0]
-        });
-
-    } catch (error) {
-        console.error("Get Order By ID Error:", error);
-        return res.status(400).json({
-            success: false,
-            message: `Get Order By ID Error: ${error?.message}`
-        });
+    if (!user || (user.role !== "admin" && user.role !== "customer")) {
+      return res.status(403).json({ success: false, message: "Access Denied" });
     }
+
+    // Create cache key
+    const cacheKey = `order:${orderId}:user:${user.id}`;
+
+    // 1️⃣ Check cache first
+    const cachedOrder = await redis.get(cacheKey);
+    if (cachedOrder) {
+      console.log(`⚡ Serving order ${orderId} for user ${user.id} from Redis cache`);
+      return res.json(JSON.parse(cachedOrder));
+    }
+
+    // 2️⃣ Query database
+    const query = `
+      SELECT *
+      FROM "V_OrderDetails"
+      WHERE "OrderID" = $1
+    `;
+    const { rows } = await pool.query(query, [orderId]);
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found or access denied.",
+      });
+    }
+
+    // 3️⃣ Optional: Restrict customers to their own orders
+    if (user.role === "customer" && rows[0].UserID !== user.id) {
+      return res.status(403).json({ success: false, message: "Access Denied" });
+    }
+
+    // 4️⃣ Cache the result for 15 minutes
+    const responseData = { success: true, data: rows[0] };
+    await redis.setEx(cacheKey, 900, JSON.stringify(responseData)); // 900 sec = 15 min
+
+    return res.json(responseData);
+  } catch (error) {
+    console.error("Get Order By ID Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: `Get Order By ID Error: ${error.message}`,
+    });
+  }
 };
+
 
 // ✅ Update order status
 const updateOrderStatus = async (req, res) => {

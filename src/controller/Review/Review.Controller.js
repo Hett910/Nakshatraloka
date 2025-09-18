@@ -1,4 +1,6 @@
 const pool = require("../../utils/PostgraceSql.Connection");
+const { redis, connectRedis } = require("../../utils/redisClient"); // import redis instance
+
 
 const GetProductReviewSummary = async (req, res) => {
     const client = await pool.connect();
@@ -253,84 +255,160 @@ const GetReviewSummary = async (req, res) => {
     }
 };
 
-
 const GetAllActiveReviews = async (req, res) => {
     if (req.user.role !== "admin") {
-        console.log(req.user.role);
-        return res.status(401).json({ success: false, message: "Unauthorized" });
+        return res
+            .status(401)
+            .json({ success: false, message: "Unauthorized" });
     }
 
     const client = await pool.connect();
     try {
-        // Get pagination params from query
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
+        // 📌 Pagination params
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
         const offset = (page - 1) * limit;
 
-        // Query with pagination
-        const sql = `
-            SELECT *
-            FROM public.v_active_reviews
-            ORDER BY "Created_Date" DESC
-            LIMIT $1 OFFSET $2;
-        `;
+        // 📌 Unique cache key for each page/limit combo
+        const cacheKey = `active_reviews:page=${page}:limit=${limit}`;
 
+        // 1️⃣ Check cache first
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            console.log("⚡ Serving from Redis cache");
+            return res.json(JSON.parse(cachedData));
+        }
+
+        // 2️⃣ Query DB if not cached
+        const sql = `
+      SELECT *
+      FROM public.v_active_reviews
+      ORDER BY "Created_Date" DESC
+      LIMIT $1 OFFSET $2;
+    `;
         const { rows } = await client.query(sql, [limit, offset]);
 
-        // Optionally, get total count for frontend pagination
-        const countResult = await client.query(`SELECT COUNT(*) AS total FROM public.v_active_reviews;`);
-        const totalReviews = parseInt(countResult.rows[0].total);
+        const countResult = await client.query(
+            `SELECT COUNT(*) AS total FROM public.v_active_reviews;`
+        );
+        const totalReviews = parseInt(countResult.rows[0].total, 10);
         const totalPages = Math.ceil(totalReviews / limit);
 
-        res.json({
+        const responseData = {
             success: true,
             page,
             limit,
             totalReviews,
             totalPages,
-            reviews: rows
-        });
+            reviews: rows,
+        };
+
+        // 3️⃣ Cache the result for 5 mins (300s)
+        await redis.set(cacheKey, JSON.stringify(responseData), { EX: 300 });
+
+        res.json(responseData);
     } catch (error) {
         console.error("Get All Active Reviews Error:", error);
         res.status(500).json({
             success: false,
-            message: `Get All Active Reviews Error: ${error.message}`
+            message: `Get All Active Reviews Error: ${error.message}`,
         });
     } finally {
-        client.release();
+        client.release(); // ✅ always release DB client
     }
 };
+
+// const GetReviewsByProduct = async (req, res) => {
+//     const { productId } = req.params;
+
+//     if (!productId) {
+//         return res.status(400).json({ success: false, message: "ProductID is required" });
+//     }
+//     try {
+//         const client = await pool.connect();
+//          const sql = `
+//             SELECT *
+//             FROM public.v_active_reviews WHERE "ProductID" = $1
+//             ORDER BY "Created_Date" DESC
+//         `;
+
+//         const { rows } = await client.query(sql, [productId]);
+
+//         if (rows.length === 0) {
+//             return res.status(404).json({ success: false, message: "No reviews found" });
+//         }
+
+//         res.json({
+//             success: true,
+//             reviews: rows
+//         });
+
+//     } catch (error) {
+//         res.status(500).json({ success: false, message: `Get Reviews Error: ${error.message}` });
+//     }
+// }
 
 const GetReviewsByProduct = async (req, res) => {
     const { productId } = req.params;
 
     if (!productId) {
-        return res.status(400).json({ success: false, message: "ProductID is required" });
+        return res
+            .status(400)
+            .json({ success: false, message: "ProductID is required" });
     }
+
+    const cacheKey = `reviews:product:${productId}`;
+
     try {
-        const client = await pool.connect();
-         const sql = `
-            SELECT *
-            FROM public.v_active_reviews WHERE "ProductID" = $1
-            ORDER BY "Created_Date" DESC
-        `;
+        // 1️⃣ Check cache first
+        const cachedReviews = await redis.get(cacheKey);
 
-        const { rows } = await client.query(sql, [productId]);
-
-        if (rows.length === 0) {
-            return res.status(404).json({ success: false, message: "No reviews found" });
+        if (cachedReviews) {
+            return res.json({
+                success: true,
+                source: "cache",
+                reviews: JSON.parse(cachedReviews),
+            });
         }
 
-        res.json({
-            success: true,
-            reviews: rows
-        });
+        // 2️⃣ If not cached → query DB
+        const client = await pool.connect();
+        try {
+            const sql = `
+        SELECT *
+        FROM public.v_active_reviews 
+        WHERE "ProductID" = $1
+        ORDER BY "Created_Date" DESC
+      `;
 
+            const { rows } = await client.query(sql, [productId]);
+
+            if (rows.length === 0) {
+                return res
+                    .status(404)
+                    .json({ success: false, message: "No reviews found" });
+            }
+
+            // 3️⃣ Save result to Redis with expiry (default 5 mins)
+            const ttl = process.env.REDIS_CACHE_TTL || 300;
+            await redis.set(cacheKey, JSON.stringify(rows), { EX: ttl });
+
+            return res.json({
+                success: true,
+                source: "db",
+                reviews: rows,
+            });
+        } finally {
+            client.release(); // ✅ always release PG client
+        }
     } catch (error) {
-        res.status(500).json({ success: false, message: `Get Reviews Error: ${error.message}` });
+        console.error("GetReviews Error:", error);
+        return res.status(500).json({
+            success: false,
+            message: `Get Reviews Error: ${error.message}`,
+        });
     }
-}
-
+};
 
 
 

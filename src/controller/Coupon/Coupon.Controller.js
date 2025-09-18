@@ -1,4 +1,5 @@
 const pool = require('../../utils/PostgraceSql.Connection');
+const { redis } = require('../../utils/redisClient');
 
 const SaveCoupon = async (req, res) => {
     const user = req.user;
@@ -54,35 +55,51 @@ const SaveCoupon = async (req, res) => {
     }
 };
 
-// get all coupons AND single coupon
+// ✅ Get all coupons with Redis caching
 const getAllCoupons = async (req, res) => {
-    const user = req.user;
+  const user = req.user;
 
-    if (user.role !== "admin") {
-        return res.status(403).json({ success: false, message: "Access Denied" });
+  if (!user || user.role !== "admin") {
+    return res.status(403).json({ success: false, message: "Access Denied" });
+  }
+
+  try {
+    const { couponId } = req.query; // optional query param
+    const cacheKey = couponId ? `coupon:${couponId}` : `coupons:all`;
+
+    // 1️⃣ Check Redis cache first
+    const cachedData = await redis.get(cacheKey);
+    if (cachedData) {
+      console.log(`⚡ Serving coupon(s) from Redis cache: ${couponId || "all"}`);
+      return res.json(JSON.parse(cachedData));
     }
 
-    try {
-        const { couponId } = req.query; // optional query param
+    // 2️⃣ Query database if not cached
+    const query = `SELECT * FROM fn_get_coupons($1);`;
+    const values = [couponId ? parseInt(couponId) : null];
 
-        const query = `SELECT * FROM fn_get_coupons($1);`;
-        const values = [couponId ? parseInt(couponId) : null];
+    const { rows } = await pool.query(query, values);
 
-        const { rows } = await pool.query(query, values);
-
-        return res.status(200).json({
-            success: true,
-            data: rows,
-        });
-
-    } catch (error) {
-        console.error("Get All Coupons Error:", error);
-        return res.status(400).json({
-            success: false,
-            message: `Get All Coupons Error: ${error.message}`,
-        });
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: "No coupon(s) found" });
     }
-}
+
+    const responseData = { success: true, data: rows };
+
+    // 3️⃣ Store in Redis with TTL (10 min)
+    await redis.setEx(cacheKey, 600, JSON.stringify(responseData));
+
+    return res.status(200).json(responseData);
+
+  } catch (error) {
+    console.error("Get All Coupons Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: `Get All Coupons Error: ${error.message}`,
+    });
+  }
+};
+
 
 const deleteCoupon = async (req, res) => {
 
@@ -124,44 +141,49 @@ const deleteCoupon = async (req, res) => {
 };
 
 
+// ✅ Get coupon usage with Redis caching
 const CouponUsage = async (req, res) => {
+  const user = req.user;
 
-    const user = req.user;
+  if (!user || user.role !== "admin") {
+    return res.status(403).json({ success: false, message: "Access Denied" });
+  }
 
-    if (user.role !== "admin") {
-        return res.status(403).json({ success: false, message: "Access Denied" });
+  try {
+    const { code } = req.query; // pass ?code=NEW50 if needed
+    const cacheKey = code ? `coupon_usage:${code}` : `coupon_usage:all`;
+
+    // 1️⃣ Check Redis cache first
+    const cachedData = await redis.get(cacheKey);
+    if (cachedData) {
+      console.log(`⚡ Serving coupon usage from Redis cache for code: ${code || "all"}`);
+      return res.json(JSON.parse(cachedData));
     }
 
-    try {
+    // 2️⃣ Query database if not cached
+    const result = await pool.query(
+      `SELECT * FROM fn_get_coupon_usage($1)`,
+      [code || null]
+    );
 
-        const { code } = req.query; // pas ?code=NEW50 if needed
-
-        const result = await pool.query(
-            `SELECT * FROM fn_get_coupon_usage($1)`,
-            [code || null]
-        );
-        // const { couponId } = req.query; // pass ?couponId=2 if needed
-
-        // const result = await pool.query(
-        //     'SELECT * FROM fn_get_coupon_usage($1)',
-        //     [couponId || null]
-        // );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ success: false, message: "No coupon(s) found" });
-        }
-
-        res.json({
-            success: true,
-            data: result.rows
-        });
-    } catch (error) {
-        console.error("Delete Coupon Error:", error);
-        return res.status(400).json({
-            success: false,
-            message: `Coupon Usage Error: ${error.message}`,
-        });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: "No coupon(s) found" });
     }
+
+    const responseData = { success: true, data: result.rows };
+
+    // 3️⃣ Store in Redis cache with TTL (10 min)
+    await redis.setEx(cacheKey, 600, JSON.stringify(responseData));
+
+    return res.json(responseData);
+
+  } catch (error) {
+    console.error("Coupon Usage Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: `Coupon Usage Error: ${error.message}`
+    });
+  }
 };
 
 

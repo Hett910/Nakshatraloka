@@ -6,7 +6,7 @@ const auth = require('../../middleware/Auth');
 
 router.post('/saveCatogary', [auth, SaveCatogaryValidation], Catogary.saveCategory);
 router.post('/getAllCatogary', Catogary.getAllCategory);
-router.post('/getCatogaryById/:id', Catogary.getCatogaryById);
+router.post('/getCatogaryById/:id', auth, Catogary.getCatogaryById);
 router.post('/deleteCatogary/:id', auth, Catogary.deleteCategory);
 router.post("/categories/featured", Catogary.getFeaturedCategories);
 

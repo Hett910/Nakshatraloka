@@ -1,4 +1,5 @@
 const pool = require('../../utils/PostgraceSql.Connection');
+const { redis } = require('../../utils/redisClient');
 
 
 const saveWishlist = async (req, res) => {
@@ -57,85 +58,92 @@ const saveWishlist = async (req, res) => {
     }
 }
 
+// ✅ List Wishlist with Redis caching
 const listWishlist = async (req, res) => {
-    try {
-        const userId = req.user.id; // ✅ from middleware (decoded JWT)
+  try {
+    const userId = req.user.id; // from decoded JWT
+    const cacheKey = `wishlist:user:${userId}`;
 
-        if (req.user.role == "customer") {
-           
-            const query = `
-                SELECT *
-                FROM "V_WishlistWithProductDetails"
-                WHERE "UserID" = $1 AND "WishlistIsActive" = true
-                ORDER BY "WishlistID" ASC
-           `;
+    if (req.user.role === "customer") {
+      // 1️⃣ Check Redis cache first
+      const cachedData = await redis.get(cacheKey);
+      if (cachedData) {
+        return res.json(JSON.parse(cachedData));
+      }
 
-            const result = await pool.query(query, [userId]);
+      // 2️⃣ Fetch from PostgreSQL if not cached
+      const query = `
+        SELECT *
+        FROM "V_WishlistWithProductDetails"
+        WHERE "UserID" = $1 AND "WishlistIsActive" = true
+        ORDER BY "WishlistID" ASC
+      `;
+      const result = await pool.query(query, [userId]);
 
-            res.json({
-                success: true,
-                data: result.rows
-            });
-        } 
-        // else if(req.user.role == "admin"){
-            
-        //     const query = `
-        //         SELECT *
-        //         FROM "V_WishlistWithProductDetails"
-        //         WHERE "WishlistIsActive" = true
-        //         ORDER BY "WishlistID" ASC
-        //    `;
+      const responseData = {
+        success: true,
+        data: result.rows,
+      };
 
-        //     const result = await pool.query(query);
+      // 3️⃣ Store result in Redis (30 min)
+      await redis.setEx(cacheKey, 1800, JSON.stringify(responseData));
 
-        //     res.json({
-        //         success: true,
-        //         data: result.rows
-        //     });
-        // } 
-        else {
-            res.status(401).json({
-                success: false,
-                message: 'Unauthorized'
-            });
-        }
-
-    } catch (error) {
-        console.error('Error fetching wishlist:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Internal Server Error',
-            error: error.message
-        });
+      return res.json(responseData);
+    } else {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
     }
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
 };
 
+
+// ✅ Get Wishlist By ID with Redis caching
 const getWishlistById = async (req, res) => {
-    try {
-        const wishlistId = req.params.id;
+  try {
+    const wishlistId = req.params.id;
+    const cacheKey = `wishlist:${wishlistId}`;
 
-        const query = `
-            SELECT *
-            FROM "V_WishlistWithProductDetails"
-            WHERE "WishlistID" = $1 AND "WishlistIsActive" = true
-        `;
-
-        const result = await pool.query(query, [wishlistId]);
-
-        res.json({
-            success: true,
-            data: result.rows
-        });
-
-    } catch (error) {
-        console.error('Error fetching wishlist by id:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Internal Server Error',
-            error: error.message
-        });
+    // 1️⃣ Check Redis cache first
+    const cachedData = await redis.get(cacheKey);
+    if (cachedData) {
+      return res.json(JSON.parse(cachedData));
     }
-}
+
+    // 2️⃣ Fetch from PostgreSQL if not cached
+    const query = `
+      SELECT *
+      FROM "V_WishlistWithProductDetails"
+      WHERE "WishlistID" = $1 AND "WishlistIsActive" = true
+    `;
+    const result = await pool.query(query, [wishlistId]);
+
+    const responseData = {
+      success: true,
+      data: result.rows,
+    };
+
+    // 3️⃣ Store result in Redis (30 min cache)
+    await redis.setEx(cacheKey, 1800, JSON.stringify(responseData));
+
+    res.json(responseData);
+  } catch (error) {
+    console.error("Error fetching wishlist by id:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+};
+
 
 module.exports = {
     saveWishlist,

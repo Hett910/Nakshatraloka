@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const auth = async (req, res, next) => {
 
     const token = req.header("Authorization");
+    
     if (!token) {
         res.status(401).json({ error: "Token not found" })
     }
@@ -19,9 +20,6 @@ const auth = async (req, res, next) => {
 
     } catch (error) {
         res.status(401).json({ message: error.message })
-        res.status(401).json({
-
-        })
     }
 }
 
