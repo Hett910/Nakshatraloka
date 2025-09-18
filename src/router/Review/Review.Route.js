@@ -8,6 +8,11 @@ router.post('/saveProductReview', auth, Review.SaveProductReview);
 router.post('/getReviewById/:id',auth,   Review.GetReviewById);
 router.post('/DeleteReview/:id', auth, Review.SoftDeleteReview);
 
-router.post('/getReviewsByProductPagination', Review.GetReviewsByProductPagination);
+router.post('/getReviewsByProductPagination/:productId', Review.GetProductReviewSummary);
 router.post('/getReviewSummary', Review.GetReviewSummary);
+
+router.post('/getAllReviews', auth, Review.GetAllActiveReviews);
+router.post('/getReviewsByProduct/:productId', Review.GetReviewsByProduct); 
+
+
 module.exports = router;

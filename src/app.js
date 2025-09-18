@@ -30,12 +30,12 @@ app.use(helmet());
 app.use(hpp());
 
 //Rate Limited
-app.use(rateLimiter({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    standardHeaders: true,
-    legacyHeaders: false,
-}))
+// app.use(rateLimiter({
+//     windowMs: 15 * 60 * 1000,
+//     max: 100,
+//     standardHeaders: true,
+//     legacyHeaders: false,
+// }))
 
 app.use("/", MasterRouter);
 

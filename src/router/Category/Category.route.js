@@ -8,5 +8,6 @@ router.post('/saveCatogary', [auth, SaveCatogaryValidation], Catogary.saveCatego
 router.post('/getAllCatogary', Catogary.getAllCategory);
 router.post('/getCatogaryById/:id', Catogary.getCatogaryById);
 router.post('/deleteCatogary/:id', auth, Catogary.deleteCategory);
+router.post("/categories/featured", Catogary.getFeaturedCategories);
 
 module.exports = router;

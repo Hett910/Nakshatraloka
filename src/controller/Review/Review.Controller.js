@@ -1,3 +1,5 @@
+const pool = require("../../utils/PostgraceSql.Connection");
+
 const GetProductReviewSummary = async (req, res) => {
     const client = await pool.connect();
     try {
@@ -180,6 +182,7 @@ const SoftDeleteReview = async (req, res) => {
 
 const GetReviewsByProductPagination = async (req, res) => {
     const { productId } = req.params;
+
     const { page = 1, limit = 10 } = req.query;
 
     if (!productId) {
@@ -251,6 +254,85 @@ const GetReviewSummary = async (req, res) => {
 };
 
 
+const GetAllActiveReviews = async (req, res) => {
+    if (req.user.role !== "admin") {
+        console.log(req.user.role);
+        return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const client = await pool.connect();
+    try {
+        // Get pagination params from query
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = (page - 1) * limit;
+
+        // Query with pagination
+        const sql = `
+            SELECT *
+            FROM public.v_active_reviews
+            ORDER BY "Created_Date" DESC
+            LIMIT $1 OFFSET $2;
+        `;
+
+        const { rows } = await client.query(sql, [limit, offset]);
+
+        // Optionally, get total count for frontend pagination
+        const countResult = await client.query(`SELECT COUNT(*) AS total FROM public.v_active_reviews;`);
+        const totalReviews = parseInt(countResult.rows[0].total);
+        const totalPages = Math.ceil(totalReviews / limit);
+
+        res.json({
+            success: true,
+            page,
+            limit,
+            totalReviews,
+            totalPages,
+            reviews: rows
+        });
+    } catch (error) {
+        console.error("Get All Active Reviews Error:", error);
+        res.status(500).json({
+            success: false,
+            message: `Get All Active Reviews Error: ${error.message}`
+        });
+    } finally {
+        client.release();
+    }
+};
+
+const GetReviewsByProduct = async (req, res) => {
+    const { productId } = req.params;
+
+    if (!productId) {
+        return res.status(400).json({ success: false, message: "ProductID is required" });
+    }
+    try {
+        const client = await pool.connect();
+         const sql = `
+            SELECT *
+            FROM public.v_active_reviews WHERE "ProductID" = $1
+            ORDER BY "Created_Date" DESC
+        `;
+
+        const { rows } = await client.query(sql, [productId]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ success: false, message: "No reviews found" });
+        }
+
+        res.json({
+            success: true,
+            reviews: rows
+        });
+
+    } catch (error) {
+        res.status(500).json({ success: false, message: `Get Reviews Error: ${error.message}` });
+    }
+}
+
+
+
 
 module.exports = {
     Review: {
@@ -259,6 +341,8 @@ module.exports = {
         GetReviewById,
         SoftDeleteReview,
         GetReviewsByProductPagination,
-        GetReviewSummary
+        GetReviewSummary,
+        GetAllActiveReviews,
+        GetReviewsByProduct
     }
 };

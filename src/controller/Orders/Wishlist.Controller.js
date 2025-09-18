@@ -76,22 +76,24 @@ const listWishlist = async (req, res) => {
                 success: true,
                 data: result.rows
             });
-        } else if(req.user.role == "admin"){
+        } 
+        // else if(req.user.role == "admin"){
             
-            const query = `
-                SELECT *
-                FROM "V_WishlistWithProductDetails"
-                WHERE "WishlistIsActive" = true
-                ORDER BY "WishlistID" ASC
-           `;
+        //     const query = `
+        //         SELECT *
+        //         FROM "V_WishlistWithProductDetails"
+        //         WHERE "WishlistIsActive" = true
+        //         ORDER BY "WishlistID" ASC
+        //    `;
 
-            const result = await pool.query(query);
+        //     const result = await pool.query(query);
 
-            res.json({
-                success: true,
-                data: result.rows
-            });
-        } else {
+        //     res.json({
+        //         success: true,
+        //         data: result.rows
+        //     });
+        // } 
+        else {
             res.status(401).json({
                 success: false,
                 message: 'Unauthorized'
@@ -134,6 +136,7 @@ const getWishlistById = async (req, res) => {
         });
     }
 }
+
 module.exports = {
     saveWishlist,
     listWishlist,

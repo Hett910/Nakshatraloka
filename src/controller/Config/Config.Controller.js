@@ -30,8 +30,39 @@ const getAllConfigData = async (req, res) => {
     }
 }
 
+
+const GetAllStatus = async (req, res) => {
+    try {
+        const query = `
+            SELECT "ID","Config_Value","SeqNo" FROM public."ConfigMaster" WHERE "Config_Key"='Status';
+        `;
+
+        const { rows } = await pool.query(query);
+
+        if (rows.length > 0) {
+            res.status(200).json({
+                success: true,
+                data: rows
+            });
+        } else {
+            res.json({
+                success: false,
+                message: "No data to show"
+            });
+        }
+    } catch (error) {
+        console.log(`Error fetching data from config: ${error}`);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal Server Error',
+            error: error.message,
+        });
+    }
+}
+
 module.exports = {
     Config: {
-        getAllConfigData
+        getAllConfigData,
+        GetAllStatus
     }
 }

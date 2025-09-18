@@ -9,11 +9,15 @@ router.post('/saveOrder', auth, Order.saveOrder);
 router.post('/listAllOrders', auth, Order.listAllOrders);
 router.post('/getOrderById/:id', auth, Order.getOrderById);
 router.post('/updateOrderStatus/:id/status', auth, Order.updateOrderStatus);
-// router.post('/getAllOrders', auth, Order.getAllOrders);
+router.post('/getCompletedOrders', auth, Order.getCompletedOrders); 
+router.post('/listPendingOrders', auth, Order.listPendingOrders);
+
 
 // Wishlist
 router.post('/manageWishlist', auth, saveWishlist);
 router.post('/listWishlist', auth, listWishlist);
 router.post('/getWishlistById/:id', auth, getWishlistById);
+
+
 
 module.exports = router;

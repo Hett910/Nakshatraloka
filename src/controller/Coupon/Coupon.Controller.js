@@ -162,6 +162,19 @@ const CouponUsage = async (req, res) => {
             message: `Coupon Usage Error: ${error.message}`,
         });
     }
+};
+
+
+const GetCouponName = async (req, res) => {
+    try {
+        
+    } catch (error) {
+        console.error("Get All Coupons Error:", error); 
+        return res.status(400).json({
+            success: false,
+            message: `Get All Coupons Error: ${error.message}`,
+        });
+    }
 }
 
 module.exports = {

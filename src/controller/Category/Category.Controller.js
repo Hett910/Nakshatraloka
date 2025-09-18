@@ -4,7 +4,7 @@ const pool = require('../../utils/PostgraceSql.Connection');
 const { validationResult } = require('express-validator');
 
 // const saveCategory = async (req, res) => {
-   
+
 //     const user = req.user;
 //     if(user.role !== "admin") return res.status(403).json({ success: false, message: "Access Denied" });
 
@@ -65,11 +65,7 @@ const saveCategory = async (req, res) => {
     }
 
     try {
-        // Validate inputs
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, errors: errors.array() });
-        }
+      
 
         // Destructure inputs from request body
         const { id, name, description, createdBy, updatedBy, isActive, image } = req.body;
@@ -227,12 +223,42 @@ const deleteCategory = async (req, res) => {
 };
 
 
+// ✅ Get Active & Featured Categories
+const getFeaturedCategories = async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const query = `
+            SELECT "ID", "Name", "Image"
+            FROM public."CatogaryMaster"
+            WHERE "IsActive" = true AND "IsFeatured" = true
+            ORDER BY "Name" ASC
+        `;
+
+        const result = await client.query(query);
+
+        return res.json({
+            success: true,
+            data: result.rows,
+        });
+    } catch (error) {
+        console.error("Error fetching featured categories:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal Server Error",
+            error: error.message,
+        });
+    } finally {
+        client.release();
+    }
+};
+
 
 module.exports = {
     Catogary: {
         saveCategory,
         getAllCategory,
         getCatogaryById,
-        deleteCategory
+        deleteCategory,
+        getFeaturedCategories
     }
 }

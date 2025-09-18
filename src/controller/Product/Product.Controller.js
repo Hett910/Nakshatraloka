@@ -242,14 +242,45 @@ const getAllProducts = async (req, res) => {
 };
 
 // ---------- Get Product by ID ----------
+// const getProductById = async (req, res) => {
+//     try {
+//         const productId = parseInt(req.params.id);
+//         const { rows } = await pool.query(`SELECT * FROM fn_get_product_by_id($1);`, [productId]);
+//         if (!rows.length) {
+//             return res.status(404).json({ success: false, message: 'Product not found' });
+//         }
+//         res.json({ success: true, data: rows[0] });
+//     } catch (error) {
+//         console.error('Error fetching product:', error);
+//         res.status(500).json({ success: false, message: `Get Product Error: ${error.message}` });
+//     }
+// };
+
 const getProductById = async (req, res) => {
     try {
         const productId = parseInt(req.params.id);
-        const { rows } = await pool.query(`SELECT * FROM fn_get_product_by_id($1);`, [productId]);
+        const { rows } = await pool.query(
+            `SELECT * FROM fn_get_product_by_id($1);`,
+            [productId]
+        );
+
         if (!rows.length) {
             return res.status(404).json({ success: false, message: 'Product not found' });
         }
-        res.json({ success: true, data: rows[0] });
+
+        const product = rows[0].product;
+
+        // ✅ Format images
+        if (product.images && Array.isArray(product.images)) {
+            product.images = product.images.map(img => ({
+                ...img,
+                imageData: img.imageData
+                    ? `http://localhost:8001/uploads/${img.imageData}`
+                    : null
+            }));
+        }
+
+        res.json({ success: true, data: { product } });
     } catch (error) {
         console.error('Error fetching product:', error);
         res.status(500).json({ success: false, message: `Get Product Error: ${error.message}` });
@@ -409,7 +440,8 @@ const GetProductDetails = async (req, res) => {
 };
 
 
-const GetProductsByCategory = async (req, res) => {
+    // getProductsByCategory.js
+  const GetProductsByCategory = async (req, res) => {
     const client = await pool.connect();
     try {
         const { categoryName, page = 1, limit = 20 } = req.body;
@@ -418,7 +450,7 @@ const GetProductsByCategory = async (req, res) => {
             return res.status(400).json({ success: false, message: "Valid categoryName is required" });
         }
 
-        const categoryNameClean = categoryName.trim();
+        const categoryNameClean = `%${categoryName.trim()}%`; // Added % for pattern matching if needed
         const pageNum = Number(page) > 0 ? Number(page) : 1;
         const limitNum = Number(limit) > 0 ? Number(limit) : 20;
         const offset = (pageNum - 1) * limitNum;
@@ -431,7 +463,7 @@ const GetProductsByCategory = async (req, res) => {
         const { rows } = await client.query(sql, [categoryNameClean, limitNum, offset]);
 
         if (!rows || rows.length === 0) {
-            return res.status(404).json({ success: false, message: `No products found for category "${categoryNameClean}"` });
+            return res.status(404).json({ success: false, message: `No products found for category ${categoryName.trim()}` });
         }
 
         res.json({
@@ -533,6 +565,54 @@ const getFeaturedProducts = async (req, res) => {
 };
 
 
+const getProductWithName = async (req, res) => {
+    try {
+        const query = `SELECT "ID","Name" FROM "ProductMaster" WHERE "IsActive" = TRUE;`;
+        const result = await pool.query(query);
+        res.json({
+            success: true,
+            data: result.rows
+        });
+    }
+    catch (err) {
+        console.error("Error fetching featured products:", err);
+        res.status(500).json({
+            success: false,
+            message: "Server Error"
+        });
+    }
+}
+
+
+const getFilteredProducts = async (req, res) => {
+
+    const client = await pool.connect();
+    try {
+        // Extract filters from query parameters
+        const minPrice = req.query.minPrice ? parseFloat(req.query.minPrice) : null;
+        const maxPrice = req.query.maxPrice ? parseFloat(req.query.maxPrice) : null;
+        const categoryName = req.query.categoryName || null;
+        const rating = req.query.rating ? parseFloat(req.query.rating) : null;
+
+        const query = `
+            SELECT * FROM public.get_filtered_products($1, $2, $3, $4);
+        `;
+        const values = [minPrice, maxPrice, categoryName, rating];
+
+        const result = await client.query(query, values);
+
+        res.json({
+            success: true,
+            data: result.rows
+        });
+    } catch (err) {
+        console.error("Error fetching filtered products:", err);
+        res.status(500).json({ success: false, message: "Server Error" });
+    } finally {
+        client.release();
+    }
+};
+
 
 
 module.exports = {
@@ -547,6 +627,8 @@ module.exports = {
         GetProductDetails,
         GetProductsByCategory,
         toggleFeaturedProduct,
-        getFeaturedProducts
+        getFeaturedProducts,
+        getProductWithName,
+        getFilteredProducts
     }
 };

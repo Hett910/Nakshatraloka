@@ -70,12 +70,15 @@ const pool = require("../../utils/PostgraceSql.Connection");
 // };
 
 const saveOrder = async (req, res) => {
+    const userID = req.user?.id;
+
+
+
     try {
         const {
             id = 0,
             shippingAddress,
             paymentMethod,
-            userId,
             coupenId = null,
             orderItems = [],
             orderStatus = 'Pending',
@@ -100,7 +103,7 @@ const saveOrder = async (req, res) => {
         `;
 
         const values = [
-            userId,
+            userID,
             shippingAddress,
             paymentMethod,
             JSON.stringify(orderItems),
@@ -268,7 +271,6 @@ const getOrderById = async (req, res) => {
     }
 };
 
-
 // ✅ Update order status
 const updateOrderStatus = async (req, res) => {
     try {
@@ -319,11 +321,82 @@ const updateOrderStatus = async (req, res) => {
     }
 };
 
+
+const getCompletedOrders = async (req, res) => {
+    const user = req.user;
+
+    if (!user?.id) {
+        return res.status(403).json({ success: false, message: "Please log in first." });
+    }
+
+    try {
+        const userId = user.id;
+
+        // Call the PostgreSQL function fn_get_completed_orders_by_user
+        const query = `
+            SELECT * 
+            FROM public.fn_get_completed_orders_by_user($1)
+        `;
+        const { rows } = await pool.query(query, [userId]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ success: false, message: "No completed orders found for this user." });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Completed orders retrieved successfully.",
+            orders: rows
+        });
+
+    } catch (error) {
+        console.error('Error fetching completed orders:', error);
+        return res.status(500).json({ success: false, message: 'Internal server error', error: error.message });
+    }
+};
+
+
+const listPendingOrders = async (req, res) => {
+    const user = req.user;
+
+    if (!user?.role !== "admin") {
+        return res.status(403).json({ success: false, message: "Access Denied." });
+    }
+
+    const client = await pool.connect();
+    try {
+        const query = `
+            SELECT *
+            FROM public.fn_get_pending_orders_by_user($1);
+        `;
+
+        const { rows } = await client.query(query, [user.id]);
+
+        return res.status(200).json({
+            success: true,
+            data: rows
+        });
+    } catch (error) {
+        console.error(`Error listing pending orders: ${error}`);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal Server Error',
+            error: error.message
+        });
+    } finally {
+        client.release();
+    }
+};
+
+
+
 module.exports = {
     Order: {
         saveOrder,
         listAllOrders,
         getOrderById,
-        updateOrderStatus
+        updateOrderStatus,
+        getCompletedOrders,
+        listPendingOrders
     }
 };

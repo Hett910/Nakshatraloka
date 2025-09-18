@@ -23,4 +23,8 @@ router.post("/getCategories", Product.GetFourCategories);
 router.post("/toggleFeaturedProduct/:id/feature", auth, Product.toggleFeaturedProduct); 
 router.post("/getFeaturedProducts", Product.getFeaturedProducts);
 
+router.post("/getProductName", Product.getProductWithName);
+
+router.post("/getFilteredProducts", Product.getFilteredProducts);
+
 module.exports = router;

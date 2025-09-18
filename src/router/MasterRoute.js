@@ -9,6 +9,8 @@ const Coupon  = require('../router/Coupon/Coupon.Route');
 const Product = require('./Product/Product.route');
 const ConsultationType = require('./Consultations/ConsultationsType.Route');
 const Consultation = require('./Consultations/Consultations.Route');
+const Cart = require('./Cart/Cart.Route'); // Cart 
+const Review = require('./Review/Review.Route');
 
 router.use(
     '/api',
@@ -20,7 +22,9 @@ router.use(
     Coupon,
     Product,
     ConsultationType,
-    Consultation
+    Consultation,
+    Cart,
+    Review
 )
 
 module.exports = router;
