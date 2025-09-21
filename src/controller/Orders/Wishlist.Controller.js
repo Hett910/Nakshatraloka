@@ -89,12 +89,7 @@ const listWishlist = async (req, res) => {
       await redis.setEx(cacheKey, 1800, JSON.stringify(responseData));
 
       return res.json(responseData);
-    } else {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized",
-      });
-    }
+    } 
   } catch (error) {
     return res.status(500).json({
       success: false,

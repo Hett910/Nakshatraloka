@@ -117,90 +117,105 @@ const { redis } = require("../../utils/redisClient.js"); // import redis instanc
 // };
 
 const saveProduct = async (req, res) => {
-    if (!req.user || req.user.role !== "admin") {
-        return res.status(403).json({ success: false, message: "Access Denied" });
-    }
-
     const client = await pool.connect();
 
     try {
-        // 1) Text fields (from req.body)
         let {
             id = 0,
-            catogaryId,
+            categoryId,
             name,
             description = null,
             advantages = null,
             howToWear = null,
             isActive = true,
-            sizes = [],      // Array of sizes
-            images = []      // Array of image objects with base64
+            createdBy = 1,
+            sizes = [],
+            productRatings = null // ✅ new field
         } = req.body;
 
-        if (!catogaryId || !name) throw new Error("catogaryId and name are required");
+        // Parse sizes if coming as JSON string (from FormData)
+        if (typeof sizes === "string") {
+            try {
+                sizes = JSON.parse(sizes);
+            } catch (err) {
+                throw new Error("sizes must be a valid JSON array");
+            }
+        }
 
-        // Convert to proper types
-        id = Number(id) || 0;
-        catogaryId = Number(catogaryId);
-        isActive = (isActive === "true" || isActive === true);
-
-        // Validate sizes
         if (!Array.isArray(sizes)) throw new Error("sizes must be an array");
-        sizes = sizes.map(s => ({
-            size: Number(s.size),
-            price: Number(s.price),
-            dummyPrice: s.dummyPrice ? Number(s.dummyPrice) : null,
-            stock: Number(s.stock)
-        }));
+        if (!categoryId || !name) throw new Error("categoryId and name are required");
 
-        // Validate images
-        if (!Array.isArray(images) || images.length === 0) throw new Error("At least one image is required");
-        const primaryCount = images.filter(i => i.isPrimary).length;
-        if (primaryCount !== 1) throw new Error("Exactly one primary image is required");
+        id = Number(id) || 0;
+        categoryId = Number(categoryId);
+        isActive = (isActive === "true" || isActive === true);
+        createdBy = Number(createdBy) || 1;
 
-        // Ensure uploads folder exists
-        const uploadDir = path.join(__dirname, '../../uploads');
-        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+        // Convert sizes values to numbers
+        sizes = sizes.map(s => {
+            const size = s.size;
+            const price = Number(s.price);
+            const stock = Number(s.stock);
+            const dummyPrice = s.dummyPrice != null ? Number(s.dummyPrice) : null;
 
-        // Convert base64 to files and prepare URLs for DB
-        images = images.map((img, idx) => {
-            const matches = img.imageData.match(/^data:(image\/\w+);base64,(.+)$/);
-            if (!matches) throw new Error("Invalid base64 image format");
-            const ext = matches[1].split("/")[1];
-            const base64Data = matches[2];
-            const filename = `product-${Date.now()}-${idx}.${ext}`;
-            const filepath = path.join(uploadDir, filename);
+            if (isNaN(price) || price <= 0) throw new Error("Each size must have a valid positive price");
+            if (isNaN(stock) || stock < 0) throw new Error("Each size must have non-negative stock");
+            if (!size) throw new Error("Each size must have a valid size value");
 
-            fs.writeFileSync(filepath, Buffer.from(base64Data, 'base64'));
-
-            return {
-                image: `/uploads/${filename}`, // Store URL in DB
-                altText: img.altText || "",
-                isPrimary: img.isPrimary || false,
-                isActive: img.isActive !== false
-            };
+            return { size, price, dummyPrice, stock };
         });
 
-        // 3) Save product in DB
+        // ✅ handle both existing + new images
+        let existingImages = [];
+        if (req.body.existingImageUrls) {
+            try {
+                existingImages = JSON.parse(req.body.existingImageUrls);
+                if (!Array.isArray(existingImages)) {
+                    existingImages = [];
+                }
+            } catch (err) {
+                console.error("Invalid existingImageUrls:", err.message);
+                existingImages = [];
+            }
+        }
+
+        let newImages = [];
+        if (req.files && req.files.length > 0) {
+            newImages = req.files.map((file, idx) => ({
+                image: `${file.filename}`,
+                altText: file.originalname || "",
+                isPrimary: idx === 0 && existingImages.length === 0, // primary only if no existing
+                isActive: true
+            }));
+        }
+
+        const images = [...existingImages, ...newImages];
+
+        // ✅ final validation
+        if (images.length === 0) {
+            throw new Error("At least one image is required");
+        }
+
         await client.query("BEGIN");
 
         const saveProductSql = `
-            SELECT fn_save_product_full(
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
-            ) AS product_id
-        `;
+      SELECT fn_save_product_full(
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
+      ) AS product_id
+    `;
+
         const saveProductVals = [
-            catogaryId,          // $1
-            name,                // $2
-            req.user.id,         // $3 created_by
-            id,                  // $4 product_id
-            description,         // $5
-            advantages,          // $6
-            howToWear,           // $7
-            id ? req.user.id : null, // $8 updated_by
-            isActive,            // $9
-            JSON.stringify(sizes),   // $10
-            JSON.stringify(images)   // $11
+            categoryId,                     // $1
+            name,                           // $2
+            createdBy,                      // $3
+            id,                             // $4
+            description,                    // $5
+            advantages,                     // $6
+            howToWear,                      // $7
+            id ? (req.user?.id || createdBy) : null, // $8 updated_by
+            isActive,                       // $9
+            JSON.stringify(sizes),          // $10
+            JSON.stringify(images),         // $11
+            productRatings                  // $12 ✅ new param
         ];
 
         const { rows } = await client.query(saveProductSql, saveProductVals);
@@ -226,16 +241,19 @@ const saveProduct = async (req, res) => {
 
 
 
+
 // ---------- Get All Products ----------
 // ✅ Get All Products with Redis cache
+
+
 const getAllProducts = async (req, res) => {
     try {
-        const cacheKey = "products:all";
+        const cacheKey = 'products:all';
 
-        // 1️⃣ Check Redis cache
+        // 1️⃣ Check Redis cache first
         const cachedData = await redis.get(cacheKey);
         if (cachedData) {
-            console.log("⚡ Serving all products from Redis cache");
+            console.log('⚡ Serving all products from Redis cache');
             return res.json(JSON.parse(cachedData));
         }
 
@@ -243,7 +261,7 @@ const getAllProducts = async (req, res) => {
         const { rows } = await pool.query(`SELECT * FROM fn_get_products();`);
 
         if (!rows.length) {
-            return res.json({ success: false, message: "No products found" });
+            return res.json({ success: false, message: 'No products found' });
         }
 
         const responseData = { success: true, data: rows };
@@ -251,15 +269,49 @@ const getAllProducts = async (req, res) => {
         // 3️⃣ Store in Redis for 1 hour
         await redis.setEx(cacheKey, 3600, JSON.stringify(responseData));
 
+        // 4️⃣ Return response
         res.json(responseData);
     } catch (error) {
-        console.error("Error fetching products:", error);
+        console.error('Error fetching products:', error);
         res.status(500).json({
             success: false,
             message: `Get Products Error: ${error.message}`,
         });
     }
 };
+
+// const getAllProducts = async (req, res) => {
+//     try {
+//         const cacheKey = "products:all";
+
+//         // 1️⃣ Check Redis cache
+//         const cachedData = await redis.get(cacheKey);
+//         if (cachedData) {
+//             console.log("⚡ Serving all products from Redis cache");
+//             return res.json(JSON.parse(cachedData));
+//         }
+
+//         // 2️⃣ Fetch from PostgreSQL
+//         const { rows } = await pool.query(`SELECT * FROM fn_get_products();`);
+
+//         if (!rows.length) {
+//             return res.json({ success: false, message: "No products found" });
+//         }
+
+//         const responseData = { success: true, data: rows };
+
+//         // 3️⃣ Store in Redis for 1 hour
+//         await redis.setEx(cacheKey, 3600, JSON.stringify(responseData));
+
+//         res.json(responseData);
+//     } catch (error) {
+//         console.error("Error fetching products:", error);
+//         res.status(500).json({
+//             success: false,
+//             message: `Get Products Error: ${error.message}`,
+//         });
+//     }
+// };
 
 
 // ---------- Get Product by ID ----------
@@ -278,49 +330,62 @@ const getAllProducts = async (req, res) => {
 // };
 
 // ✅ Get Product By ID with Redis cache
+
+
 const getProductById = async (req, res) => {
     try {
-        const productId = parseInt(req.params.id);
+        // ✅ 1. Parse and validate productId
+        const productId = parseInt(req.params.id, 10);
+        if (isNaN(productId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid product ID",
+            });
+        }
 
-        // 1️⃣ Cache key per product
         const cacheKey = `product:${productId}`;
 
-        // 2️⃣ Check Redis cache
+        // ✅ 2. Try Redis cache first
         const cachedData = await redis.get(cacheKey);
         if (cachedData) {
-            console.log(`⚡ Serving product ${productId} from Redis cache`);
+            console.log("⚡ Serving product from Redis cache");
             return res.json(JSON.parse(cachedData));
         }
 
-        // 3️⃣ Fetch from PostgreSQL
+        // ✅ 3. Fetch from PostgreSQL if not in cache
         const { rows } = await pool.query(
-            `SELECT * FROM fn_get_product_by_id($1);`,
+            `SELECT * FROM fn_get_product_by_id($1::integer)`, // ← explicit cast fixes the error
             [productId]
         );
 
         if (!rows.length) {
-            return res
-                .status(404)
-                .json({ success: false, message: "Product not found" });
+            return res.status(404).json({
+                success: false,
+                message: "Product not found",
+            });
         }
 
         const product = rows[0].product;
 
-        // 4️⃣ Format images
+        // ✅ 4. Map imageData properly
         if (product.images && Array.isArray(product.images)) {
             product.images = product.images.map((img) => ({
                 ...img,
                 imageData: img.imageData
-                    ? `http://localhost:8001/uploads/${img.imageData}`
+                    ? `http://localhost:8001${img.imageData}`
                     : null,
             }));
         }
 
         const responseData = { success: true, data: { product } };
 
-        // 5️⃣ Cache result for 1 hour
-        await redis.setEx(cacheKey, 3600, JSON.stringify(responseData));
+        // ✅ 5. Store in Redis (TTL = 1 hour or from env)
+        const ttl = process.env.REDIS_CACHE_TTL
+            ? parseInt(process.env.REDIS_CACHE_TTL, 10)
+            : 3600;
+        await redis.setEx(cacheKey, ttl, JSON.stringify(responseData));
 
+        // ✅ 6. Send response
         res.json(responseData);
     } catch (error) {
         console.error("Error fetching product:", error);
@@ -775,7 +840,6 @@ const getFilteredProducts = async (req, res) => {
         // 1️⃣ Check Redis cache
         const cachedData = await redis.get(cacheKey);
         if (cachedData) {
-            console.log("⚡ Serving filtered products from Redis cache");
             return res.json(JSON.parse(cachedData));
         }
 

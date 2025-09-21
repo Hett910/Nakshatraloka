@@ -65,48 +65,74 @@ const { redis } = require('../../utils/redisClient');
 const saveCart = async (req, res) => {
     const user = req.user;
 
-    if (!user?.id) {
-        return res.status(403).json({ success: false, message: "Please log in first." });
+    if (!user.id) {
+        return res
+            .status(403)
+            .json({ success: false, message: "Please log in first." });
     }
 
     try {
-        const { productId, quantity = 1, selectedOptions = {} } = req.body;
+        const { productId } = req.body;
 
         if (!productId) {
-            return res.status(400).json({ success: false, message: "Product ID is required." });
+            return res
+                .status(400)
+                .json({ success: false, message: "Product ID is required." });
         }
 
-        const userId = user.id;
+        const userId = user.id; // Ensure that user object contains 'id'
 
-        // Call the PostgreSQL function fn_save_cart
-        const query = `
-            SELECT * 
-            FROM public.fn_save_cart($1, $2, $3, $4)
-        `;
-        const { rows } = await pool.query(query, [
-            userId,
-            productId,
-            quantity,
-            JSON.stringify(selectedOptions)
-        ]);
+        // 1️⃣ Check if this product is already in the user's cart
+        const checkQuery = `
+      SELECT * FROM public."Cart"
+      WHERE "UserID" = $1 AND "ProductID" = $2
+    `;
+        const checkResult = await pool.query(checkQuery, [userId, productId]);
 
-        if (rows.length === 0) {
-            return res.status(500).json({ success: false, message: "Failed to save cart item" });
+        if (checkResult.rows.length > 0) {
+            // 2️⃣ Toggle IsActive if it already exists
+            const currentStatus = checkResult.rows[0].IsActive;
+
+            const toggleQuery = `
+        UPDATE public."Cart"
+        SET "IsActive" = $1
+        WHERE "ID" = $2
+        RETURNING *
+      `;
+            const toggleResult = await pool.query(toggleQuery, [
+                !currentStatus,
+                checkResult.rows[0].ID,
+            ]);
+
+            return res.status(200).json({
+                success: true,
+                message: `Cart item ${!currentStatus ? "activated" : "deactivated"
+                    } successfully.`,
+                cartItem: toggleResult.rows[0],
+            });
+        } else {
+            // 3️⃣ Insert new record
+            const insertQuery = `
+        INSERT INTO public."Cart" ("UserID", "ProductID", "IsActive")
+        VALUES ($1, $2, true)
+        RETURNING *
+      `;
+            const insertResult = await pool.query(insertQuery, [userId, productId]);
+
+            return res.status(201).json({
+                success: true,
+                message: "Product added to cart successfully.",
+                cartItem: insertResult.rows[0],
+            });
         }
-
-        const cartItem = rows[0];
-
-        return res.status(200).json({
-            success: true,
-            message: "Cart item saved successfully.",
-            cartItem
-        });
-
     } catch (error) {
-        console.error('Error saving cart:', error);
-        return res.status(500).json({ success: false, message: 'Internal server error', error: error.message });
+        console.error("Error saving cart:", error);
+        return res
+            .status(500)
+            .json({ success: false, message: "Internal server error" });
     }
 };
+
 
 const updateCart = async (req, res) => {
 
@@ -271,49 +297,51 @@ const UpdateCartData = async (req, res) => {
 // };
 
 
-// ✅ List User Cart with Redis caching
 const listUserCart = async (req, res) => {
-  const user = req.user;
-  if (!user?.id) {
-    return res.status(403).json({ success: false, message: "Please log in first." });
-  }
-
-  const cacheKey = `user_cart:${user.id}`;
-
-  try {
-    // 1️⃣ Check Redis cache first
-    const cachedData = await redis.get(cacheKey);
-    if (cachedData) {
-      return res.status(200).json(JSON.parse(cachedData));
+    const user = req.user;
+    if (!user?.id) {
+        return res.status(403).json({ success: false, message: "Please log in first." });
     }
 
-    // 2️⃣ Query database if not cached
-    const client = await pool.connect();
+    const cacheKey = `user_cart:${user.id}`;
+
     try {
-      const query = `SELECT * FROM public.get_user_cart_products_v2($1);`;
-      const { rows } = await client.query(query, [user.id]);
+        // 1. Check Redis cache
+        const cachedCart = await redis.get(cacheKey);
+        if (cachedCart) {
+            console.log("📦 Serving from Redis cache");
+            return res.status(200).json({ success: true, data: JSON.parse(cachedCart) });
+        }
 
-      const responseData = { success: true, data: rows };
+        // 2. Query from View instead of raw SQL
+        const client = await pool.connect();
+        const query = `
+            SELECT *
+            FROM public."V_UserCartDetails"
+            WHERE "UserID" = $1
+            ORDER BY "CreaatedAt" DESC;
+        `;
+        const { rows } = await client.query(query, [user.id]);
+        client.release();
 
-      // 3️⃣ Store in Redis with TTL (e.g., 5 minutes)
-      await redis.setEx(cacheKey, 300, JSON.stringify(responseData));
+        const dataWithImages = rows.map(item => ({
+            ...item,
+            PrimaryImage: item.PrimaryImage || null
+        }));
 
-      return res.status(200).json(responseData);
-    } finally {
-      client.release();
+        // 3. Store result in Redis cache
+        await redis.set(cacheKey, JSON.stringify(dataWithImages), {
+            EX: 300 // cache for 5 min
+        });
+
+        console.log("💾 Stored in Redis cache");
+
+        return res.status(200).json({ success: true, data: dataWithImages });
+    } catch (error) {
+        console.error(`Error listing user cart: ${error}`);
+        return res.status(500).json({ success: false, message: 'Internal Server Error', error: error.message });
     }
-
-  } catch (error) {
-    console.error(`Error listing user cart:`, error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-      error: error.message
-    });
-  }
 };
-
-
 
 module.exports = {
     Cart: {
