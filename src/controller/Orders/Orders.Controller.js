@@ -71,11 +71,20 @@ const pool = require("../../utils/PostgraceSql.Connection");
 
 const saveOrder = async (req, res) => {
     try {
+        // ✅ Extract userId from token instead of request body
+        const userId = req.user?.id;
+
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: "Unauthorized: User ID missing from token."
+            });
+        }
+
         const {
             id = 0,
             shippingAddress,
             paymentMethod,
-            userId,
             coupenId = null,
             orderItems = [],
             orderStatus = 'Pending',
@@ -85,7 +94,7 @@ const saveOrder = async (req, res) => {
             transactionId = null
         } = req.body;
 
-        if (!userId || !shippingAddress || !paymentMethod || orderItems.length === 0) {
+        if (!shippingAddress || !paymentMethod || orderItems.length === 0) {
             return res.status(400).json({
                 success: false,
                 message: "Missing required fields or empty order items."
@@ -100,7 +109,7 @@ const saveOrder = async (req, res) => {
         `;
 
         const values = [
-            userId,
+            userId,           // ✅ userId from token
             shippingAddress,
             paymentMethod,
             JSON.stringify(orderItems),
@@ -124,7 +133,6 @@ const saveOrder = async (req, res) => {
     } catch (error) {
         console.error("Save Order Error:", error);
 
-        // Extract the Postgres error message
         const pgMessage = error?.message || "Internal Server Error";
 
         return res.status(400).json({
@@ -133,6 +141,7 @@ const saveOrder = async (req, res) => {
         });
     }
 };
+
 
 const listAllOrders = async (req, res) => {
     try {
@@ -149,8 +158,10 @@ const listAllOrders = async (req, res) => {
                 success: true,
                 data: result.rows
             });
-        } else if (user.role === "customer") {
-            const query = `
+        } else
+
+            if (user.role === "customer") {
+                const query = `
                 SELECT *
                 FROM "V_OrderDetails"
                 WHERE "UserID" = $1 AND "IsActive" = true
@@ -158,18 +169,18 @@ const listAllOrders = async (req, res) => {
             `;
 
 
-            const result = await pool.query(query, [user.id]);
+                const result = await pool.query(query, [user.id]);
 
-            return res.json({
-                success: true,
-                data: result.rows
-            });
-        } else {
-            return res.status(403).json({
-                success: false,
-                message: "Access Denied"
-            });
-        }
+                return res.json({
+                    success: true,
+                    data: result.rows
+                });
+            } else {
+                return res.status(403).json({
+                    success: false,
+                    message: "Access Denied"
+                });
+            }
     } catch (error) {
         console.error("Save Order Error:", error);
 
@@ -326,4 +337,4 @@ module.exports = {
         getOrderById,
         updateOrderStatus
     }
-};
+}; 

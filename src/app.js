@@ -6,22 +6,32 @@ const passport = require('passport');
 const hpp = require('hpp');
 const createError = require('http-errors');
 const rateLimiter = require('express-rate-limit');
+const path = require('path');
 const MasterRouter = require('./router/MasterRoute.js') 
 
 
 dotenv.config({debug: false});
 const app = express();
+// app.use(cors({ origin: "http://localhost:5173" }));
+app.use(cors({ origin: "*", credentials: true, methods: ['GET', 'POST', 'PATCH', 'DELETE'] }));
 
 
 // Disable Express signature
 app.disable("x-powered-by");
 
 // for parsig data
-app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // for form data
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ limit: "5mb", extended: true }));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Serve static files from uploads folder
+
+// app.use(express.json());
+// app.use(express.urlencoded({ extended: true })); // for form data
+
 
 // Allowing cors
-app.use(cors({ origin: process.env.CLIENT_URL, credentials: true, methods: ['GET', 'POST', 'PATCH', 'DELETE'] }));
+// app.use(cors({ origin: process.env.CLIENT_URL, credentials: true, methods: ['GET', 'POST', 'PATCH', 'DELETE'] }));
 
 
 // for security and sanitazation of request
@@ -29,14 +39,19 @@ app.use(helmet());
 app.use(hpp());
 
 //Rate Limited
-app.use(rateLimiter({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    standardHeaders: true,
-    legacyHeaders: false,
-}))
+// app.use(rateLimiter({
+//     windowMs: 15 * 60 * 1000,
+//     max: 100,
+//     standardHeaders: true,
+//     legacyHeaders: false,
+// }))
+app.get("/test", async (req, res) => {
+    res.send("HELKFFIEF")
+})
 
 app.use("/", MasterRouter);
+
+
 
 app.use(passport.initialize());
 
@@ -47,7 +62,7 @@ app.get("/", (req, res) => {
         message: "Navigate to the API URL with the valid End-Points."
     });
 });
-
+    
 
 //For Throwing error about not found
 app.use(async (req, res, next) => {

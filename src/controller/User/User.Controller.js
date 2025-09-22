@@ -6,10 +6,10 @@ const pool = require('../../utils/PostgraceSql.Connection');
 const saveUser = async (req, res) => {
     try {
 
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, errors: errors.array() });
-        }
+        // const errors = validationResult(req);
+        // if (!errors.isEmpty()) {
+        //     return res.status(400).json({ success: false, errors: errors.array() });
+        // }
 
         const {
             id = 0,
@@ -18,11 +18,13 @@ const saveUser = async (req, res) => {
             phone,
             role = "customer",
             is_active = true,
+
         } = req.body;
 
 
         // Hash password only on insert or when updating with a new one
-        let password_hash = req.body.password_hash;
+        let password_hash = req.body.password_hash || req.body.password;
+
 
         if (id === 0) {
             // New user -> hash required
@@ -69,6 +71,67 @@ const saveUser = async (req, res) => {
     }
 }
 
+const updateUser = async (req, res) => {
+    try {
+        const {
+            id,             // user ID from token (optional: can also allow passing in body)
+            fullname,
+            email,
+            phone,
+            BirthDate,
+            BirthPlace,
+            BirthTime,
+            Gender,
+            Address,
+            FullNameAtBirth,
+        } = req.body;
+
+        // Optional: override id with token ID to prevent changing others' data
+        const userId = req.user.id; // assuming your auth middleware sets req.user
+
+        // ✅ Update UserMaster
+        await pool.query(
+            `UPDATE public."UserMaster"
+       SET fullname = $1,
+           email = $2,
+           phone = $3,
+           updated_at = NOW()
+       WHERE "ID" = $4`,
+            [fullname, email, phone, userId]
+        );
+
+        // ✅ Update UserDetails
+        await pool.query(
+            `INSERT INTO public."UserDetails" 
+       ("UserID", "BirthDate", "BirthPlace", "BirthTime", "Gender", "Address", "FullNameAtBirth", "Created_Date") 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       ON CONFLICT ("UserID") DO UPDATE 
+       SET "BirthDate" = EXCLUDED."BirthDate",
+           "BirthPlace" = EXCLUDED."BirthPlace",
+           "BirthTime" = EXCLUDED."BirthTime",
+           "Gender" = EXCLUDED."Gender",
+           "Address" = EXCLUDED."Address",
+           "FullNameAtBirth" = EXCLUDED."FullNameAtBirth",
+           "Updated_Date" = NOW()`,
+            [userId, BirthDate, BirthPlace, BirthTime, Gender, Address, FullNameAtBirth]
+        );
+
+        res.status(200).json({
+            success: true,
+            message: "Profile updated successfully",
+        });
+    } catch (error) {
+        console.error("Error updating user:", error);
+        res.status(500).json({
+            success: false,
+            message: "Internal Server Error",
+            error: error.message,
+        });
+    }
+};
+
+
+
 const loginUser = async (req, res) => {
     try {
 
@@ -99,10 +162,9 @@ const loginUser = async (req, res) => {
 
         const token = jwt.sign(
             { id: existingUser.ID, email: existingUser.email, role: existingUser.role },
-            process.env.JWT_SECRET || "SECRET",
+            process.env.JWT_SECRET_KEY_FOR_NAK,
             { expiresIn: '2h' }
         );
-
 
 
 
@@ -200,10 +262,111 @@ const UpdatePassword = async (req, res) => {
     }
 };
 
+// ✅ Get user profile by ID
+// const GetUserByID = async (req, res) => {
+//     try {
+//         // ✅ Use user ID from JWT, not from params
+//         const id = req.user.id;
+
+//         const userResult = await pool.query(
+//             `SELECT "ID", fullname, email, phone, role, is_active, created_at, updated_at
+//        FROM "UserMaster" 
+//        WHERE "ID" = $1`,
+//             [id]
+//         );
+
+//         if (userResult.rows.length === 0) {
+//             return res.status(404).json({
+//                 success: false,
+//                 message: "User not found",
+//             });
+//         }
+
+//         const user = userResult.rows[0];
+
+//         // ✅ Normalize to match frontend expectations
+//         const normalizedUser = {
+//             id: user.ID,
+//             fullname: user.fullname,
+//             email: user.email,
+//             phone: user.phone,
+//             role: user.role ? user.role.toLowerCase() : "customer",
+//             isActive: user.is_active,
+//             createdAt: user.created_at,
+//             updatedAt: user.updated_at,
+//         };
+
+//         res.json({
+//             success: true,
+//             user: normalizedUser,
+//         });
+//     } catch (error) {
+//         console.error("Error fetching user:", error);
+//         res.status(500).json({
+//             success: false,
+//             message: "Server error",
+//         });
+//     }
+// };
+
+const GetUserByID = async (req, res) => {
+    try {
+        const id = req.user.id;
+
+        const userResult = await pool.query(
+            `SELECT "ID", fullname, email, phone, role, is_active, created_at, updated_at
+       FROM "UserMaster" 
+       WHERE "ID" = $1`,
+            [id]
+        );
+
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "User not found" });
+        }
+
+        const user = userResult.rows[0];
+
+        // Fetch details from UserDetails
+        const detailsResult = await pool.query(
+            `SELECT "BirthDate", "BirthPlace", "BirthTime", "Gender", "Address", "FullNameAtBirth"
+       FROM "UserDetails"
+       WHERE "UserID" = $1`,
+            [id]
+        );
+
+        const details = detailsResult.rows[0] || {};
+
+        const normalizedUser = {
+            id: user.ID,
+            fullname: user.fullname,
+            email: user.email,
+            phone: user.phone,
+            role: user.role ? user.role.toLowerCase() : "customer",
+            isActive: user.is_active,
+            createdAt: user.created_at,
+            updatedAt: user.updated_at,
+            BirthDate: details.BirthDate || "",
+            BirthPlace: details.BirthPlace || "",
+            BirthTime: details.BirthTime || "",
+            Gender: details.Gender || "",
+            Address: details.Address || "",
+            FullNameAtBirth: details.FullNameAtBirth || "",
+        };
+
+        res.json({ success: true, user: normalizedUser });
+    } catch (error) {
+        console.error("Error fetching user:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+
 module.exports = {
     User: {
         saveUser,
         loginUser,
-        UpdatePassword
+        UpdatePassword,
+        GetUserByID,
+        updateUser
     }
 }

@@ -1,11 +1,11 @@
 const pool = require('../../utils/PostgraceSql.Connection');
 
 const SaveCoupon = async (req, res) => {
-    const user = req.user;
+    // const user = req.user;
 
-    if (user.role !== "admin") {
-        return res.status(403).json({ success: false, message: "Access Denied" });
-    }
+    // if (user.role !== "admin") {
+    //     return res.status(403).json({ success: false, message: "Access Denied" });
+    // }
 
     try {
         const coupon = req.body;
@@ -31,7 +31,7 @@ const SaveCoupon = async (req, res) => {
             coupon.minOrderAmount || 0,   // p_min_order_amount (default 0.00 if null)
             coupon.maxDiscountAmount,     // p_max_discount_amount (nullable)
             coupon.isActive ?? true,       // p_isactive (default true if null/undefined)
-            coupon.productIds || []       // p_product_ids (as JSON array)
+            coupon.productIDs || []        // p_product_ids (as JSON array)
         ];
 
         const { rows } = await pool.query(query, values);
@@ -72,7 +72,7 @@ const getAllCoupons = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            data: rows,
+            data: rows, 
         });
 
     } catch (error) {
@@ -164,11 +164,99 @@ const CouponUsage = async (req, res) => {
     }
 }
 
+const ActiveCouponProducts = async (req, res) => {
+    const user = req.user;
+
+    // Only admin access
+    if (user.role !== "admin") {
+        return res.status(403).json({ success: false, message: "Access Denied" });
+    }
+
+    try {
+        const { couponId } = req.query; // Optional filter by coupon ID
+
+        const query = `
+            SELECT 
+                p."ID" AS ProductID,
+                p."Name" AS ProductName,
+                p."Description",
+                ps."Size",
+                ps."Stock",
+                ps."Price" AS SizePrice,
+                c."ID" AS CouponID,
+                c."Code" AS CouponCode,
+                c."DiscountType",
+                c."DiscountValue"
+            FROM "ProductMaster" p
+            INNER JOIN "CouponProducts" cp ON p."ID" = cp."ProductID"
+            INNER JOIN "CouponsMaster" c ON cp."CouponID" = c."ID"
+            INNER JOIN "ProductSize" ps ON ps."ProductID" = p."ID"
+            WHERE p."IsActive" = true
+              AND c."IsActive" = true
+              AND ps."IsActive" = true
+              ${couponId ? 'AND c."ID" = $1' : ''}
+            ORDER BY p."ID", ps."Size"
+        `;
+
+        const values = couponId ? [couponId] : [];
+        const result = await pool.query(query, values);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "No products found for active coupons" });
+        }
+
+        res.json({
+            success: true,
+            data: result.rows
+        });
+
+    } catch (error) {
+        console.error("Active Coupon Products Error:", error);
+        return res.status(400).json({
+            success: false,
+            message: `Error fetching products: ${error.message}`
+        });
+    }
+}
+
+
+
+const getAllCouponsForDisplay = async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+        const result = await client.query(
+            `SELECT * 
+             FROM public."CouponsMaster" 
+             WHERE "IsActive" = true
+             ORDER BY "ID" ASC`
+        );
+
+        res.json({
+            success: true,
+            data: result.rows
+        });
+    } catch (err) {
+        console.error("Error fetching coupons:", err);
+        res.status(500).json({
+            success: false,
+            message: "Server Error"
+        });
+    } finally {
+        client.release();
+    }
+};
+
+// module.exports = { getAllCoupons };
+
+
 module.exports = {
     Coupon: {
         SaveCoupon,
         getAllCoupons,
         deleteCoupon,
-        CouponUsage
+        CouponUsage,
+        getAllCouponsForDisplay,
+        ActiveCouponProducts
     }
 };

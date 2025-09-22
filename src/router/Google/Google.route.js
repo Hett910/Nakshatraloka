@@ -16,6 +16,8 @@ router.get(
     try {
       // ✅ req.user is { user, token } from googleAuth.js
       const { user, token } = req.user;
+      
+      res.redirect(`http://localhost:5173/auth/success?token=${token}`);
 
       res.json({
         success: true,
@@ -28,6 +30,7 @@ router.get(
           role: user.role,
         },
       });
+      
     } catch (error) {
       console.error("Google login error:", error);
       res.status(500).json({ success: false, message: "Internal Server Error" });

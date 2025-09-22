@@ -25,7 +25,7 @@ passport.use(
                 // this WORKSS 👇
                 //return done(null, { user: profile, token: accessToken });
                  const email = profile.emails[0].value;
-      const fullname = profile.displayName;
+                 const fullname = profile.displayName;
 
       // check if user exists
       let user = await pool.query(
@@ -52,7 +52,7 @@ passport.use(
         email: dbUser.email,
         role: dbUser.role,
       };
-      const token = jwt.sign(payload, process.env.JWT_SECRET || "SECRET", {
+      const token = jwt.sign(payload, process.env.JWT_SECRET_KEY_FOR_NAK, {
         expiresIn: "7d",
       });
 

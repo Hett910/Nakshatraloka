@@ -62,7 +62,7 @@ const listWishlist = async (req, res) => {
         const userId = req.user.id; // ✅ from middleware (decoded JWT)
 
         if (req.user.role == "customer") {
-           
+            
             const query = `
                 SELECT *
                 FROM "V_WishlistWithProductDetails"
