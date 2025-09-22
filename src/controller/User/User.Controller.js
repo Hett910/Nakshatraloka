@@ -329,8 +329,8 @@ const GetUserByID = async (req, res) => {
         // Fetch details from UserDetails
         const detailsResult = await pool.query(
             `SELECT "BirthDate", "BirthPlace", "BirthTime", "Gender", "Address", "FullNameAtBirth"
-       FROM "UserDetails"
-       WHERE "UserID" = $1`,
+            FROM "UserDetails"
+            WHERE "UserID" = $1;`,
             [id]
         );
 

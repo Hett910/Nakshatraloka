@@ -309,25 +309,14 @@ const listUserCart = async (req, res) => {
         return res.status(403).json({ success: false, message: "Please log in first." });
     }
 
-    const cacheKey = `user_cart:${user.id}`;
-
     try {
-        // 1. Check Redis cache
-        const cachedCart = await redis.get(cacheKey);
-        if (cachedCart) {
-            // console.log("📦 Serving from Redis cache");
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedCart)
-            });
-        }
-
+       
         // 2. Query from DB
         const client = await pool.connect();
         const query = `
             SELECT *
             FROM public."V_UserCartDetails"
-            WHERE "UserID" = $1
+            WHERE "UserID" = $1 AND "IsActive" = true
             ORDER BY "CreaatedAt" DESC;
         `;
         const { rows } = await client.query(query, [user.id]);
@@ -338,11 +327,6 @@ const listUserCart = async (req, res) => {
             PrimaryImage: item.PrimaryImage || null
         }));
 
-        // 3. Store in Redis (stringified JSON)
-        await redis.set(cacheKey, JSON.stringify(dataWithImages), {
-            EX: 300 // cache for 5 minutes
-        });
-        // console.log("💾 Stored in Redis cache");
 
         return res.status(200).json({ success: true, data: dataWithImages });
     } catch (error) {

@@ -722,18 +722,18 @@ const GetProductsByCategory = async (req, res) => {
 
 const getFeaturedProducts = async (req, res) => {
     const client = await pool.connect();
-    const cacheKey = "products:featured";
+    // const cacheKey = "products:featured";
 
     try {
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log("📦 Serving featured products from Redis cache");
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData),
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log("📦 Serving featured products from Redis cache");
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData),
+        //     });
+        // }
 
         // 2. Query DB
         const result = await client.query(
@@ -741,11 +741,11 @@ const getFeaturedProducts = async (req, res) => {
         );
 
         // 3. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(result.rows),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(result.rows),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log("💾 Stored featured products in Redis");
 
         res.status(200).json({ success: true, data: result.rows });

@@ -167,7 +167,7 @@ const getAllCategory = async (req, res) => {
         // 1. Check Redis cache
         const cachedData = await redis.get(cacheKey);
         if (cachedData) {
-            console.log("📦 Serving all categories from Redis cache");
+            // console.log("📦 Serving all categories from Redis cache");
             return res.status(200).json({
                 success: true,
                 data: JSON.parse(cachedData),
@@ -206,18 +206,18 @@ const getAllCategory = async (req, res) => {
 
 
 const getAllFeaturedCategory = async (req, res) => {
-    const cacheKey = "featured:categories";
+    // const cacheKey = "featured:categories";
 
     try {
-        // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log("📦 Serving featured categories from Redis");
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData)
-            });
-        }
+        // // 1. Check Redis cache
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log("📦 Serving featured categories from Redis");
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData)
+        //     });
+        // }
 
         // 2. Query from DB
         const query = `
@@ -229,7 +229,7 @@ const getAllFeaturedCategory = async (req, res) => {
 
         if (rows.length > 0) {
             // 3. Store in Redis (cache for 1 hour)
-            await redis.set(cacheKey, JSON.stringify(rows), { EX: 3600 });
+            // await redis.set(cacheKey, JSON.stringify(rows), { EX: 3600 });
             // console.log("💾 Stored featured categories in Redis");
 
             return res.status(200).json({
