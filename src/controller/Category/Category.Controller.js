@@ -2,6 +2,7 @@ const express = require('express');
 const { SaveCatogaryValidation } = require('../../utils/Validation')
 const pool = require('../../utils/PostgraceSql.Connection');
 const { validationResult } = require('express-validator');
+const { redis } = require('../../utils/redisClient');
 
 
 
@@ -158,65 +159,95 @@ const saveCategory = async (req, res) => {
     }
 };
 
+
 const getAllCategory = async (req, res) => {
+    const cacheKey = "all_categories";
+
     try {
-        const query = `
-            SELECT * from public."v_getallcatogary"
-        `;
-
-        const { rows } = await pool.query(query)
-
-        if (rows.length > 0) {
-            res.status(200).json({
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            console.log("📦 Serving all categories from Redis cache");
+            return res.status(200).json({
                 success: true,
-                data: rows
-            });
-        } else {
-            res.json({
-                success: false,
-                message: "No data to show"
+                data: JSON.parse(cachedData),
             });
         }
 
+        // 2. Query DB
+        const query = `SELECT * FROM public."v_getallcatogary"`;
+        const { rows } = await pool.query(query);
+
+        if (rows.length > 0) {
+            // 3. Store in Redis with expiration
+            await redis.set(cacheKey, JSON.stringify(rows), { EX: 600 }); // cache for 10 min
+            console.log("💾 Stored all categories in Redis");
+
+            return res.status(200).json({ success: true, data: rows });
+        } else {
+            return res.json({
+                success: false,
+                message: "No data to show",
+            });
+        }
     } catch (error) {
-        console.error('Error fetching all category:', error);
-        res.status(500).json({
+        console.error("Error fetching all category:", error);
+        return res.status(500).json({
             success: false,
-            message: 'Internal Server Error',
-            error: error.message
+            message: "Internal Server Error",
+            error: error.message,
         });
     }
-}
+};
+
 
 
 // ---------- Get All Featured Categories ----------
+
+
 const getAllFeaturedCategory = async (req, res) => {
+    const cacheKey = "featured:categories";
+
     try {
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log("📦 Serving featured categories from Redis");
+            return res.status(200).json({
+                success: true,
+                data: JSON.parse(cachedData)
+            });
+        }
+
+        // 2. Query from DB
         const query = `
             SELECT * 
             FROM public."v_getallcatogary"
             WHERE "IsFeatured" = TRUE LIMIT 4
         `;
-
         const { rows } = await pool.query(query);
 
         if (rows.length > 0) {
-            res.status(200).json({
+            // 3. Store in Redis (cache for 1 hour)
+            await redis.set(cacheKey, JSON.stringify(rows), { EX: 3600 });
+            // console.log("💾 Stored featured categories in Redis");
+
+            return res.status(200).json({
                 success: true,
                 data: rows
             });
         } else {
-            res.json({
+            return res.json({
                 success: false,
                 message: "No featured categories found"
             });
         }
 
     } catch (error) {
-        console.error('Error fetching featured categories:', error);
+        console.error("Error fetching featured categories:", error);
         res.status(500).json({
             success: false,
-            message: 'Internal Server Error',
+            message: "Internal Server Error",
             error: error.message
         });
     }
@@ -225,36 +256,52 @@ const getAllFeaturedCategory = async (req, res) => {
 
 const getCatogaryById = async (req, res) => {
     try {
-
         const { id } = req.params;
+        const cacheKey = `category:${id}`;
 
+        // 1. Check Redis cache
+        const cachedCategory = await redis.get(cacheKey);
+        if (cachedCategory) {
+            // console.log(`📦 Serving category ${id} from Redis cache`);
+            return res.status(200).json({
+                success: true,
+                data: JSON.parse(cachedCategory),
+            });
+        }
+
+        // 2. Query DB
         const query = ` 
-            SELECT * from public."v_getallcatogary" where "ID" = $1; 
+            SELECT * 
+            FROM public."v_getallcatogary" 
+            WHERE "ID" = $1; 
         `;
-
         const { rows } = await pool.query(query, [id]);
 
         if (rows.length === 0) {
             return res.status(404).json({
                 success: false,
-                message: `Category with specific request not found`,
-            });
-        } else {
-            res.status(200).json({
-                success: true,
-                data: rows[0], // return single category
+                message: "Category with specific request not found",
             });
         }
 
+        // 3. Store in Redis with expiration
+        await redis.set(cacheKey, JSON.stringify(rows[0]), { EX: 600 }); // 10 min cache
+        // console.log(`💾 Stored category ${id} in Redis`);
+
+        return res.status(200).json({
+            success: true,
+            data: rows[0],
+        });
     } catch (error) {
-        console.error('Error fetching specific category:', error);
-        res.status(500).json({
+        console.error("Error fetching specific category:", error);
+        return res.status(500).json({
             success: false,
-            message: 'Internal Server Error',
-            error: error.message
+            message: "Internal Server Error",
+            error: error.message,
         });
     }
-}
+};
+
 
 const deleteCategory = async (req, res) => {
     if (req.user.role !== "admin") {

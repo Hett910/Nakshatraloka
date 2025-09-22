@@ -9,7 +9,7 @@ const auth = async (req, res, next) => {
     }
 
     try {
-        jwt.verify(token, process.env.JWT_SECRET || "SECRET", (err, decoded) => {
+        jwt.verify(token, process.env.JWT_SECRET_KEY_FOR_NAK, (err, decoded) => {
             if (err) {
                 return res.status(403).json({ message: "Invalid or expired token" });
             }

@@ -1,38 +1,49 @@
-const pool= require('../../utils/PostgraceSql.Connection')
+const pool = require('../../utils/PostgraceSql.Connection');
+const { redis } = require('../../utils/redisClient');
+
 
 const GetProductReviewSummary = async (req, res) => {
-    const client = await pool.connect();
+    const { productId } = req.body; // or req.query / req.params
+
+    if (!productId) {
+        return res.status(400).json({ success: false, message: "ProductID is required" });
+    }
+
+    const cacheKey = `product:review-summary:${productId}`;
+
     try {
-        // Get productId from request body or params
-        const { productId } = req.body;  // or req.query / req.params depending on your API design
-        if (!productId) {
-            return res.status(400).json({ success: false, message: "ProductID is required" });
+        // 1. Check Redis cache
+        const cachedSummary = await redis.get(cacheKey);
+        if (cachedSummary) {
+            // console.log(`📦 Serving review summary for product ${productId} from Redis`);
+            return res.status(200).json(JSON.parse(cachedSummary));
         }
 
+        // 2. Query DB
+        const client = await pool.connect();
         const sql = `SELECT * FROM fn_get_product_review_summary($1)`;
-        const values = [productId];
+        const { rows } = await client.query(sql, [productId]);
+        client.release();
 
-        const { rows } = await client.query(sql, values);
-
-        if (rows.length === 0) {
-            return res.json({
-                success: true,
-                message: "No reviews found",
-                data: { ProductID: productId, AvgRating: 0, TotalReviews: 0 }
-            });
-        }
-
-        res.json({
+        const response = {
             success: true,
-            message: "Review summary fetched successfully",
-            data: rows[0]   // { ProductID, AvgRating, TotalReviews }
-        });
+            message: rows.length ? "Review summary fetched successfully" : "No reviews found",
+            data: rows.length ? rows[0] : { ProductID: productId, AvgRating: 0, TotalReviews: 0 }
+        };
+
+        // 3. Store in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(response),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log(`💾 Stored review summary for product ${productId} in Redis`);
+
+        res.status(200).json(response);
 
     } catch (error) {
         console.error("Get Product Review Summary Error:", error);
         res.status(500).json({ success: false, message: `Get Product Review Summary Error: ${error.message}` });
-    } finally {
-        client.release();
     }
 };
 
@@ -97,6 +108,7 @@ const SaveProductReview = async (req, res) => {
     }
 };
 
+
 const GetReviewById = async (req, res) => {
     const { id } = req.params;
 
@@ -104,8 +116,18 @@ const GetReviewById = async (req, res) => {
         return res.status(400).json({ success: false, message: "Review ID is required" });
     }
 
-    const client = await pool.connect();
+    const cacheKey = `review:${id}`;
+
     try {
+        // 1. Check Redis cache
+        const cachedReview = await redis.get(cacheKey);
+        if (cachedReview) {
+            // console.log(`📦 Serving review ${id} from Redis cache`);
+            return res.status(200).json(JSON.parse(cachedReview));
+        }
+
+        // 2. Query DB
+        const client = await pool.connect();
         const sql = `
             SELECT 
                 r."ID",
@@ -122,23 +144,33 @@ const GetReviewById = async (req, res) => {
             WHERE r."ID" = $1
         `;
         const { rows } = await client.query(sql, [id]);
+        client.release();
 
         if (rows.length === 0) {
             return res.status(404).json({ success: false, message: "Review not found" });
         }
 
-        res.json({
+        const response = {
             success: true,
             review: rows[0]
-        });
+        };
+
+        // 3. Store in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(response),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log(`💾 Stored review ${id} in Redis`);
+
+        res.status(200).json(response);
 
     } catch (error) {
         console.error("Get Review Error:", error);
         res.status(500).json({ success: false, message: `Get Review Error: ${error.message}` });
-    } finally {
-        client.release();
     }
 };
+
 
 // const GetReviewsByProduct = async (req, res) => {
 //     const { productId } = req.params;
@@ -172,50 +204,69 @@ const GetReviewById = async (req, res) => {
 
 // GET reviews by product ID
 
+
 const GetReviewsByProduct = async (req, res) => {
-  try {
-    // Extract productId from URL params
-    const { productId } = req.params;
+    try {
+        const { productId } = req.params;
 
-    if (!productId) {
-      return res.status(400).json({
-        success: false,
-        message: "ProductID is required in the URL as a param"
-      });
-    }
+        if (!productId) {
+            return res.status(400).json({
+                success: false,
+                message: "ProductID is required in the URL as a param"
+            });
+        }
 
-    const client = await pool.connect();
+        const cacheKey = `reviews:product:${productId}`;
 
-    const sql = `
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log(`📦 Serving reviews for product ${productId} from Redis cache`);
+            return res.status(200).json(JSON.parse(cachedData));
+        }
+
+        // 2. Query DB
+        const client = await pool.connect();
+        const sql = `
       SELECT *
       FROM public.v_active_reviews
       WHERE "ProductID" = $1
       ORDER BY "Created_Date" DESC
     `;
+        const { rows } = await client.query(sql, [productId]);
+        client.release();
 
-    const { rows } = await client.query(sql, [productId]);
-    client.release(); // release connection
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "No reviews found for this product"
+            });
+        }
 
-    if (!rows || rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No reviews found for this product"
-      });
+        const response = {
+            success: true,
+            reviews: rows
+        };
+
+        // 3. Store in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(response),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log(`💾 Stored reviews for product ${productId} in Redis`);
+
+        res.status(200).json(response);
+
+    } catch (error) {
+        console.error("GetReviewsByProduct Error:", error.message);
+        res.status(500).json({
+            success: false,
+            message: `Server Error: ${error.message}`
+        });
     }
-
-    res.status(200).json({
-      success: true,
-      reviews: rows
-    });
-
-  } catch (error) {
-    console.error("GetReviewsByProduct Error:", error.message);
-    res.status(500).json({
-      success: false,
-      message: `Server Error: ${error.message}`
-    });
-  }
 };
+
 
 const SoftDeleteReview = async (req, res) => {
     const { id } = req.params;
@@ -255,52 +306,69 @@ const SoftDeleteReview = async (req, res) => {
     }
 };
 
+
 const GetAllActiveReviews = async (req, res) => {
     if (req.user.role !== "admin") {
-        console.log(req.user.role);
         return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const client = await pool.connect();
-    try {
-        // Get pagination params from query
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const offset = (page - 1) * limit;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
 
-        // Query with pagination
+    const cacheKey = `reviews:active:page:${page}:limit:${limit}`;
+    const client = await pool.connect();
+
+    try {
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log(`📦 Serving active reviews page ${page} from Redis cache`);
+            return res.status(200).json(JSON.parse(cachedData));
+        }
+
+        // 2. Query DB
         const sql = `
             SELECT *
             FROM public.v_active_reviews
             ORDER BY "Created_Date" DESC
             LIMIT $1 OFFSET $2;
         `;
-
         const { rows } = await client.query(sql, [limit, offset]);
 
-        // Optionally, get total count for frontend pagination
+        // Total count for pagination
         const countResult = await client.query(`SELECT COUNT(*) AS total FROM public.v_active_reviews;`);
         const totalReviews = parseInt(countResult.rows[0].total);
         const totalPages = Math.ceil(totalReviews / limit);
 
-        res.json({
+        const response = {
             success: true,
             page,
             limit,
             totalReviews,
             totalPages,
             reviews: rows
-        });
+        };
+
+        // 3. Store in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(response),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log(`💾 Stored active reviews page ${page} in Redis`);
+
+        res.status(200).json(response);
+
     } catch (error) {
         console.error("Get All Active Reviews Error:", error);
-        res.status(500).json({ 
-            success: false, 
-            message: `Get All Active Reviews Error: ${error.message}` 
-        });
+        res.status(500).json({ success: false, message: `Get All Active Reviews Error: ${error.message}` });
     } finally {
         client.release();
     }
 };
+
+
 
 const GetReviewsByProductPagination = async (req, res) => {
     const { productId } = req.params;
@@ -311,8 +379,18 @@ const GetReviewsByProductPagination = async (req, res) => {
     }
 
     const offset = (page - 1) * limit;
+    const cacheKey = `reviews:product:${productId}:page:${page}:limit:${limit}`;
     const client = await pool.connect();
+
     try {
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log(`📦 Serving reviews for product ${productId} page ${page} from Redis cache`);
+            return res.status(200).json(JSON.parse(cachedData));
+        }
+
+        // 2. Query DB
         const sql = `
             SELECT 
                 r."ID",
@@ -331,11 +409,22 @@ const GetReviewsByProductPagination = async (req, res) => {
         `;
         const { rows } = await client.query(sql, [productId, limit, offset]);
 
-        res.json({
+        const response = {
             success: true,
             reviews: rows,
             pagination: { page: Number(page), limit: Number(limit) }
-        });
+        };
+
+        // 3. Store in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(response),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log(`💾 Stored reviews for product ${productId} page ${page} in Redis`);
+
+        res.status(200).json(response);
+
     } catch (error) {
         console.error("Get Reviews By Product Error:", error);
         res.status(500).json({ success: false, message: `Get Reviews Error: ${error.message}` });
@@ -351,8 +440,18 @@ const GetReviewSummary = async (req, res) => {
         return res.status(400).json({ success: false, message: "ProductID is required" });
     }
 
+    const cacheKey = `product:reviews:${productId}`;
     const client = await pool.connect();
+
     try {
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log(`📦 Serving review summary for product ${productId} from Redis cache`);
+            return res.status(200).json(JSON.parse(cachedData));
+        }
+
+        // 2. Query DB
         const sql = `
             SELECT 
                 COALESCE(AVG("Rating"), 0)::NUMERIC(3,2) AS "AvgRating",
@@ -362,10 +461,18 @@ const GetReviewSummary = async (req, res) => {
         `;
         const { rows } = await client.query(sql, [productId]);
 
-        res.json({
-            success: true,
-            summary: rows[0]
-        });
+        const response = { success: true, summary: rows[0] };
+
+        // 3. Store in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(response),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log(`💾 Stored review summary for product ${productId} in Redis`);
+
+        res.status(200).json(response);
+
     } catch (error) {
         console.error("Get Review Summary Error:", error);
         res.status(500).json({ success: false, message: `Get Review Summary Error: ${error.message}` });
@@ -373,6 +480,7 @@ const GetReviewSummary = async (req, res) => {
         client.release();
     }
 };
+
 
 
 

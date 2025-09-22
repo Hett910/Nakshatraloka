@@ -1,4 +1,5 @@
-const pool = require('../utils/PostgraceSql.Connection');
+const pool = require('../../utils/PostgraceSql.Connection');
+const { redis } = require('../../utils/redisClient');
 
 // const saveCart = async (req, res) => {
 //     const user = req.user;
@@ -226,78 +227,78 @@ const updateCart = async (req, res) => {
 // }
 
 const UpdateCartData = async (req, res) => {
-  const user = req.user;
-  if (!user?.id) {
-    return res.status(403).json({ success: false, message: "Please log in first." });
-  }
-
-  try {
-    const { cartId, quantity, selectedOptions } = req.body;
-
-    if (!cartId) {
-      return res.status(400).json({ success: false, message: "Cart ID (ProductID) is required." });
+    const user = req.user;
+    if (!user?.id) {
+        return res.status(403).json({ success: false, message: "Please log in first." });
     }
 
-    if (quantity === undefined && !selectedOptions) {
-      return res.status(400).json({ success: false, message: "Nothing to update." });
-    }
+    try {
+        const { cartId, quantity, selectedOptions } = req.body;
 
-    const userId = user.id;
+        if (!cartId) {
+            return res.status(400).json({ success: false, message: "Cart ID (ProductID) is required." });
+        }
 
-    // 1️⃣ Find the actual cart row for this user and ProductID
-    const checkQuery = `
+        if (quantity === undefined && !selectedOptions) {
+            return res.status(400).json({ success: false, message: "Nothing to update." });
+        }
+
+        const userId = user.id;
+
+        // 1️⃣ Find the actual cart row for this user and ProductID
+        const checkQuery = `
       SELECT * FROM public."Cart"
       WHERE "ProductID" = $1 AND "UserID" = $2 AND "IsActive" = true AND "IsOrdered" = false
       LIMIT 1
     `;
-    const checkResult = await pool.query(checkQuery, [cartId, userId]);
+        const checkResult = await pool.query(checkQuery, [cartId, userId]);
 
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ success: false, message: "Cart item not found or cannot be updated." });
-    }
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Cart item not found or cannot be updated." });
+        }
 
-    const cartRowId = checkResult.rows[0].ID;
+        const cartRowId = checkResult.rows[0].ID;
 
-    // 2️⃣ Build dynamic update query
-    let updateFields = [];
-    let values = [];
-    let paramIndex = 1;
+        // 2️⃣ Build dynamic update query
+        let updateFields = [];
+        let values = [];
+        let paramIndex = 1;
 
-    if (quantity !== undefined) {
-      updateFields.push(`"Quantity" = $${paramIndex}`);
-      values.push(quantity);
-      paramIndex++;
-    }
+        if (quantity !== undefined) {
+            updateFields.push(`"Quantity" = $${paramIndex}`);
+            values.push(quantity);
+            paramIndex++;
+        }
 
-    if (selectedOptions !== undefined) {
-      updateFields.push(`"SelectedOptions" = $${paramIndex}`);
-      values.push(JSON.stringify(selectedOptions));
-      paramIndex++;
-    }
+        if (selectedOptions !== undefined) {
+            updateFields.push(`"SelectedOptions" = $${paramIndex}`);
+            values.push(JSON.stringify(selectedOptions));
+            paramIndex++;
+        }
 
-    updateFields.push(`"UpdatedAt" = NOW()`);
+        updateFields.push(`"UpdatedAt" = NOW()`);
 
-    // 3️⃣ Update the cart row
-    const updateQuery = `
+        // 3️⃣ Update the cart row
+        const updateQuery = `
       UPDATE public."Cart"
       SET ${updateFields.join(", ")}
       WHERE "ID" = $${paramIndex}
       RETURNING *
     `;
-    values.push(cartRowId);
+        values.push(cartRowId);
 
-    const { rows } = await pool.query(updateQuery, values);
+        const { rows } = await pool.query(updateQuery, values);
 
-    return res.status(200).json({
-      success: true,
-      message: "Cart item updated successfully.",
-      cartItem: rows[0]
-    });
+        return res.status(200).json({
+            success: true,
+            message: "Cart item updated successfully.",
+            cartItem: rows[0]
+        });
 
-  } catch (error) {
-    console.error("Error updating cart:", error);
-    return res.status(500).json({ success: false, message: "Internal server error", error: error.message });
-  }
+    } catch (error) {
+        console.error("Error updating cart:", error);
+        return res.status(500).json({ success: false, message: "Internal server error", error: error.message });
+    }
 };
 
 
@@ -308,17 +309,20 @@ const listUserCart = async (req, res) => {
         return res.status(403).json({ success: false, message: "Please log in first." });
     }
 
-    // const cacheKey = `user_cart:${user.id}`;
+    const cacheKey = `user_cart:${user.id}`;
 
     try {
-        // // 1. Check Redis cache
-        // const cachedCart = await redisClient.get(cacheKey);
-        // if (cachedCart) {
-        //     console.log("📦 Serving from Redis cache");
-        //     return res.status(200).json({ success: true, data: JSON.parse(cachedCart) });
-        // }
+        // 1. Check Redis cache
+        const cachedCart = await redis.get(cacheKey);
+        if (cachedCart) {
+            // console.log("📦 Serving from Redis cache");
+            return res.status(200).json({
+                success: true,
+                data: JSON.parse(cachedCart)
+            });
+        }
 
-        // 2. Query from View instead of raw SQL
+        // 2. Query from DB
         const client = await pool.connect();
         const query = `
             SELECT *
@@ -334,20 +338,22 @@ const listUserCart = async (req, res) => {
             PrimaryImage: item.PrimaryImage || null
         }));
 
-        // // 3. Store result in Redis cache
-        // await redisClient.set(cacheKey, JSON.stringify(dataWithImages), {
-        //     EX: 300 // cache for 5 min
-        // });
-
+        // 3. Store in Redis (stringified JSON)
+        await redis.set(cacheKey, JSON.stringify(dataWithImages), {
+            EX: 300 // cache for 5 minutes
+        });
         // console.log("💾 Stored in Redis cache");
 
         return res.status(200).json({ success: true, data: dataWithImages });
     } catch (error) {
         console.error(`Error listing user cart: ${error}`);
-        return res.status(500).json({ success: false, message: 'Internal Server Error', error: error.message });
+        return res.status(500).json({
+            success: false,
+            message: "Internal Server Error",
+            error: error.message
+        });
     }
 };
-
 module.exports = {
     Cart: {
         saveCart,

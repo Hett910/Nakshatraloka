@@ -1,5 +1,6 @@
 const express = require("express");
 const pool = require("../../utils/PostgraceSql.Connection");
+const { redis } = require("../../utils/redisClient");
 
 
 // Save or update order
@@ -146,53 +147,63 @@ const saveOrder = async (req, res) => {
 const listAllOrders = async (req, res) => {
     try {
         const user = req.user;
+        let cacheKey;
+        let query;
+        let params = [];
 
+        // Determine cache key based on role
         if (user.role === "admin") {
-            const query = `
+            cacheKey = "orders:all";
+            query = `
                 SELECT *
                 FROM "V_OrderDetails"
                 ORDER BY "OrderID" ASC
             `;
-            const result = await pool.query(query);
-            return res.json({
-                success: true,
-                data: result.rows
-            });
-        } else
-
-            if (user.role === "customer") {
-                const query = `
+        } else if (user.role === "customer") {
+            cacheKey = `orders:user:${user.id}`;
+            query = `
                 SELECT *
                 FROM "V_OrderDetails"
                 WHERE "UserID" = $1 AND "IsActive" = true
                 ORDER BY "OrderID" ASC
             `;
+            params.push(user.id);
+        } else {
+            return res.status(403).json({ success: false, message: "Access Denied" });
+        }
 
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log(`📦 Serving orders from Redis cache for ${user.role === "admin" ? "admin" : "user " + user.id}`);
+            return res.status(200).json({
+                success: true,
+                data: JSON.parse(cachedData),
+            });
+        }
 
-                const result = await pool.query(query, [user.id]);
+        // 2. Query DB
+        const result = await pool.query(query, params);
 
-                return res.json({
-                    success: true,
-                    data: result.rows
-                });
-            } else {
-                return res.status(403).json({
-                    success: false,
-                    message: "Access Denied"
-                });
-            }
+        // 3. Store in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(result.rows),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log(`💾 Stored orders in Redis for ${user.role === "admin" ? "admin" : "user " + user.id}`);
+
+        return res.status(200).json({ success: true, data: result.rows });
+
     } catch (error) {
-        console.error("Save Order Error:", error);
-
-        // Extract the Postgres error message
-        const pgMessage = error?.message || "Internal Server Error";
-
+        console.error("List All Orders Error:", error);
         return res.status(400).json({
             success: false,
-            message: `List Order Error: ${pgMessage}`
+            message: `List Order Error: ${error?.message || "Internal Server Error"}`
         });
     }
-}
+};
+
 
 // const getAllOrders = async (req, res) => {
 //     try {
@@ -240,22 +251,35 @@ const listAllOrders = async (req, res) => {
 // }
 
 
-// ✅ Get order by ID
+
 const getOrderById = async (req, res) => {
     try {
         const { id } = req.params;
         const user = req.user;
-        console.log(user)
 
-        if (user.role !== 'admin' && user.role !== 'customer') return res.status(403).json({ success: false, message: "Access Denied" });
+        if (user.role !== 'admin' && user.role !== 'customer') {
+            return res.status(403).json({ success: false, message: "Access Denied" });
+        }
 
+        const cacheKey = `order:${id}`;
+
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log(`📦 Serving order ${id} from Redis cache`);
+            return res.status(200).json({
+                success: true,
+                data: JSON.parse(cachedData),
+            });
+        }
+
+        // 2. Query DB
         const query = `
             SELECT *
             FROM "V_OrderDetails"
             WHERE "OrderID" = $1
         `;
         const values = [id];
-
         const result = await pool.query(query, values);
 
         if (result.rows.length === 0) {
@@ -265,16 +289,21 @@ const getOrderById = async (req, res) => {
             });
         }
 
-        return res.json({
-            success: true,
-            data: result.rows[0]
-        });
+        // 3. Store in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(result.rows[0]),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log(`💾 Stored order ${id} in Redis`);
+
+        return res.json({ success: true, data: result.rows[0] });
 
     } catch (error) {
         console.error("Get Order By ID Error:", error);
         return res.status(400).json({
             success: false,
-            message: `Get Order By ID Error: ${error?.message}`
+            message: `Get Order By ID Error: ${error.message}`
         });
     }
 };

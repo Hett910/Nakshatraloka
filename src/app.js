@@ -7,10 +7,11 @@ const hpp = require('hpp');
 const createError = require('http-errors');
 const rateLimiter = require('express-rate-limit');
 const path = require('path');
-const MasterRouter = require('./router/MasterRoute.js') 
+const MasterRouter = require('./router/MasterRoute.js');
+const { connectRedis, redis } = require('./utils/redisClient.js');
 
 
-dotenv.config({debug: false});
+dotenv.config({ debug: false });
 const app = express();
 // app.use(cors({ origin: "http://localhost:5173" }));
 app.use(cors({ origin: "*", credentials: true, methods: ['GET', 'POST', 'PATCH', 'DELETE'] }));
@@ -45,9 +46,12 @@ app.use(hpp());
 //     standardHeaders: true,
 //     legacyHeaders: false,
 // }))
-app.get("/test", async (req, res) => {
-    res.send("HELKFFIEF")
-})
+
+(async () => {
+    await connectRedis();
+    const pong = await redis.ping();
+    console.log("Redis ping:", pong); // should print "PONG"
+})();
 
 app.use("/", MasterRouter);
 
@@ -62,7 +66,7 @@ app.get("/", (req, res) => {
         message: "Navigate to the API URL with the valid End-Points."
     });
 });
-    
+
 
 //For Throwing error about not found
 app.use(async (req, res, next) => {

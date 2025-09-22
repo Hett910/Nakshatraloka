@@ -32,4 +32,8 @@ router.post("/getFeaturedProducts", Product.getFeaturedProducts);
 
 router.post("/GetProductForCoupon", Product.GetProductForCoupon);
 
+router.post('/toggleSlideshow', auth, Product.toggleProductSlideshow);
+
+router.post('/slideshowProducts', Product.getSlideshowProducts);
+
 module.exports = router;

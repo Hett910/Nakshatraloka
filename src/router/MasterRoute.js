@@ -9,7 +9,7 @@ const Coupon  = require('../router/Coupon/Coupon.Route');
 const Product = require('./Product/Product.route');
 const Consut = require('./Consaultation/Consultations.Route');
 const ConsultType = require('./Consaultation/ConsultationsType.Route')
-const Cart = require('./cart.router');
+const Cart = require('./Cart/Cart.route');
 const review = require('./Review/Review.Route')
 
 router.use(

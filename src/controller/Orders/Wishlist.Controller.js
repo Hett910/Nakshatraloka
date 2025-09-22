@@ -1,4 +1,5 @@
 const pool = require('../../utils/PostgraceSql.Connection');
+const { redis } = require('../../utils/redisClient');
 
 
 const saveWishlist = async (req, res) => {
@@ -57,56 +58,73 @@ const saveWishlist = async (req, res) => {
     }
 }
 
+
 const listWishlist = async (req, res) => {
     try {
-        const userId = req.user.id; // ✅ from middleware (decoded JWT)
+        const userId = req.user.id;
+        let cacheKey;
 
-        if (req.user.role == "customer") {
-            
-            const query = `
+        if (req.user.role === "customer") {
+            cacheKey = `wishlist:user:${userId}`;
+        } else if (req.user.role === "admin") {
+            cacheKey = `wishlist:all`;
+        } else {
+            return res.status(401).json({ success: false, message: "Unauthorized" });
+        }
+
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log(`📦 Serving wishlist from Redis cache for ${req.user.role === "admin" ? "admin" : "user "+userId}`);
+            return res.status(200).json({
+                success: true,
+                data: JSON.parse(cachedData),
+            });
+        }
+
+        // 2. Query DB
+        let query;
+        const params = [];
+
+        if (req.user.role === "customer") {
+            query = `
                 SELECT *
                 FROM "V_WishlistWithProductDetails"
                 WHERE "UserID" = $1 AND "WishlistIsActive" = true
                 ORDER BY "WishlistID" ASC
-           `;
-
-            const result = await pool.query(query, [userId]);
-
-            res.json({
-                success: true,
-                data: result.rows
-            });
-        } else if(req.user.role == "admin"){
-            
-            const query = `
+            `;
+            params.push(userId);
+        } else if (req.user.role === "admin") {
+            query = `
                 SELECT *
                 FROM "V_WishlistWithProductDetails"
                 WHERE "WishlistIsActive" = true
                 ORDER BY "WishlistID" ASC
-           `;
-
-            const result = await pool.query(query);
-
-            res.json({
-                success: true,
-                data: result.rows
-            });
-        } else {
-            res.status(401).json({
-                success: false,
-                message: 'Unauthorized'
-            });
+            `;
         }
 
+        const result = await pool.query(query, params);
+
+        // 3. Store in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(result.rows),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log(`💾 Stored wishlist in Redis for ${req.user.role === "admin" ? "admin" : "user "+userId}`);
+
+        return res.status(200).json({ success: true, data: result.rows });
+
     } catch (error) {
-        console.error('Error fetching wishlist:', error);
-        res.status(500).json({
+        console.error("Error fetching wishlist:", error);
+        return res.status(500).json({
             success: false,
-            message: 'Internal Server Error',
+            message: "Internal Server Error",
             error: error.message
         });
     }
 };
+
 
 const getWishlistById = async (req, res) => {
     try {

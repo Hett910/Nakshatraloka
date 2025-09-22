@@ -1,4 +1,5 @@
 const pool = require("../../utils/PostgraceSql.Connection");
+const { redis } = require("../../utils/redisClient");
 
 // ✅ Create Consultation Type
 const saveConsultationType = async (req, res) => {
@@ -53,13 +54,34 @@ const saveConsultationType = async (req, res) => {
 };
 
 
-// ✅ Get All
 const getAllConsultationTypes = async (req, res) => {
     const client = await pool.connect();
+    const cacheKey = "consultation_types:all";
+
     try {
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log("📦 Serving all consultation types from Redis cache");
+            return res.status(200).json({
+                success: true,
+                data: JSON.parse(cachedData),
+            });
+        }
+
+        // 2. Query DB
         const result = await client.query(
             `SELECT * FROM public."Consultations Types" WHERE "IsActive" = TRUE ORDER BY "ID" ASC`
         );
+
+        // 3. Store in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(result.rows),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log("💾 Stored all consultation types in Redis");
+
         res.status(200).json({ success: true, data: result.rows });
     } catch (error) {
         console.error("Error fetching consultation types:", error);
@@ -69,11 +91,23 @@ const getAllConsultationTypes = async (req, res) => {
     }
 };
 
-// ✅ Get by ID
 const getConsultationTypeById = async (req, res) => {
     const client = await pool.connect();
     try {
         const { id } = req.params;
+        const cacheKey = `consultation_type:${id}`;
+
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log(`📦 Serving consultation type ${id} from Redis cache`);
+            return res.status(200).json({
+                success: true,
+                data: JSON.parse(cachedData),
+            });
+        }
+
+        // 2. Query DB
         const result = await client.query(
             `SELECT * FROM public."Consultations Types" WHERE "ID" = $1 AND "IsActive" = TRUE`,
             [id]
@@ -82,6 +116,14 @@ const getConsultationTypeById = async (req, res) => {
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, message: "Not Found" });
         }
+
+        // 3. Store in Redis with TTL
+        await redis.set(
+            cacheKey,
+            JSON.stringify(result.rows[0]),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log(`💾 Stored consultation type ${id} in Redis`);
 
         res.status(200).json({ success: true, data: result.rows[0] });
     } catch (error) {

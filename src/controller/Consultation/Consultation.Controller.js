@@ -1,5 +1,6 @@
 const { validationResult } = require('express-validator');
 const pool = require('../../utils/PostgraceSql.Connection'); // Adjust path accordingly
+const { redis } = require('../../utils/redisClient');
 
 const saveConsultation = async (req, res) => {
     try {
@@ -115,8 +116,20 @@ const saveConsultation = async (req, res) => {
 
 const getConsultations = async (req, res) => {
     try {
-        const { id } = req.params; // Get ID from route params
+        const { id } = req.params; // optional ID
+        const cacheKey = id ? `consultation:${id}` : `consultations:all`;
 
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log(`📦 Serving ${id ? 'consultation ' + id : 'all consultations'} from Redis cache`);
+            return res.status(200).json({
+                success: true,
+                data: JSON.parse(cachedData)
+            });
+        }
+
+        // 2. Query DB
         let query = `SELECT * FROM public."v_consultations" WHERE "IsActive" = TRUE`;
         const params = [];
 
@@ -125,20 +138,33 @@ const getConsultations = async (req, res) => {
             params.push(id);
         }
 
-        query += ` ORDER BY "BookingDate" DESC`; // can use BookingDate
+        query += ` ORDER BY "BookingDate" DESC`;
 
         const result = await pool.query(query, params);
 
-        res.json({
+        // 3. Store result in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(result.rows),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log(`💾 Stored ${id ? 'consultation ' + id : 'all consultations'} in Redis`);
+
+        return res.status(200).json({
             success: true,
             data: result.rows
         });
 
     } catch (error) {
         console.error('Error fetching consultations:', error);
-        res.status(500).json({ success: false, message: 'Internal Server Error', error: error.message });
+        return res.status(500).json({
+            success: false,
+            message: 'Internal Server Error',
+            error: error.message
+        });
     }
 };
+
 
 
 const deleteConsultation = async (req, res) => {

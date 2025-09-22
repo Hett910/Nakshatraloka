@@ -1,4 +1,5 @@
 const pool = require('../../utils/PostgraceSql.Connection');
+const { redis } = require('../../utils/redisClient');
 
 const SaveCoupon = async (req, res) => {
     // const user = req.user;
@@ -54,7 +55,6 @@ const SaveCoupon = async (req, res) => {
     }
 };
 
-// get all coupons AND single coupon
 const getAllCoupons = async (req, res) => {
     const user = req.user;
 
@@ -63,17 +63,33 @@ const getAllCoupons = async (req, res) => {
     }
 
     try {
-        const { couponId } = req.query; // optional query param
+        const { couponId } = req.query; // optional
+        const cacheKey = couponId ? `coupons:${couponId}` : `coupons:all`;
 
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log(`📦 Serving ${couponId ? 'coupon ' + couponId : 'all coupons'} from Redis cache`);
+            return res.status(200).json({
+                success: true,
+                data: JSON.parse(cachedData)
+            });
+        }
+
+        // 2. Query DB
         const query = `SELECT * FROM fn_get_coupons($1);`;
         const values = [couponId ? parseInt(couponId) : null];
-
         const { rows } = await pool.query(query, values);
 
-        return res.status(200).json({
-            success: true,
-            data: rows, 
-        });
+        // 3. Store in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(rows),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log(`💾 Stored ${couponId ? 'coupon ' + couponId : 'all coupons'} in Redis`);
+
+        return res.status(200).json({ success: true, data: rows });
 
     } catch (error) {
         console.error("Get All Coupons Error:", error);
@@ -82,7 +98,7 @@ const getAllCoupons = async (req, res) => {
             message: `Get All Coupons Error: ${error.message}`,
         });
     }
-}
+};
 
 const deleteCoupon = async (req, res) => {
 
@@ -123,9 +139,7 @@ const deleteCoupon = async (req, res) => {
     }
 };
 
-
 const CouponUsage = async (req, res) => {
-
     const user = req.user;
 
     if (user.role !== "admin") {
@@ -133,36 +147,48 @@ const CouponUsage = async (req, res) => {
     }
 
     try {
+        const { code } = req.query; // optional ?code=NEW50
+        const cacheKey = code ? `coupon_usage:${code}` : `coupon_usage:all`;
 
-        const { code } = req.query; // pas ?code=NEW50 if needed
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log(`📦 Serving coupon usage ${code || 'all'} from Redis cache`);
+            return res.status(200).json({
+                success: true,
+                data: JSON.parse(cachedData),
+            });
+        }
 
+        // 2. Query DB
         const result = await pool.query(
             `SELECT * FROM fn_get_coupon_usage($1)`,
             [code || null]
         );
-        // const { couponId } = req.query; // pass ?couponId=2 if needed
-
-        // const result = await pool.query(
-        //     'SELECT * FROM fn_get_coupon_usage($1)',
-        //     [couponId || null]
-        // );
 
         if (result.rows.length === 0) {
             return res.status(404).json({ success: false, message: "No coupon(s) found" });
         }
 
-        res.json({
-            success: true,
-            data: result.rows
-        });
+        // 3. Store in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(result.rows),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log(`💾 Stored coupon usage ${code || 'all'} in Redis`);
+
+        res.json({ success: true, data: result.rows });
+
     } catch (error) {
-        console.error("Delete Coupon Error:", error);
+        console.error("Coupon Usage Error:", error);
         return res.status(400).json({
             success: false,
             message: `Coupon Usage Error: ${error.message}`,
         });
     }
-}
+};
+
 
 const ActiveCouponProducts = async (req, res) => {
     const user = req.user;
@@ -174,7 +200,19 @@ const ActiveCouponProducts = async (req, res) => {
 
     try {
         const { couponId } = req.query; // Optional filter by coupon ID
+        const cacheKey = couponId ? `coupon_products:${couponId}` : `coupon_products:all`;
 
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log(`📦 Serving ${couponId ? 'coupon ' + couponId : 'all coupons'} products from Redis cache`);
+            return res.status(200).json({
+                success: true,
+                data: JSON.parse(cachedData)
+            });
+        }
+
+        // 2. Query DB
         const query = `
             SELECT 
                 p."ID" AS ProductID,
@@ -197,7 +235,6 @@ const ActiveCouponProducts = async (req, res) => {
               ${couponId ? 'AND c."ID" = $1' : ''}
             ORDER BY p."ID", ps."Size"
         `;
-
         const values = couponId ? [couponId] : [];
         const result = await pool.query(query, values);
 
@@ -205,10 +242,15 @@ const ActiveCouponProducts = async (req, res) => {
             return res.status(404).json({ success: false, message: "No products found for active coupons" });
         }
 
-        res.json({
-            success: true,
-            data: result.rows
-        });
+        // 3. Store result in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(result.rows),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log(`💾 Stored ${couponId ? 'coupon ' + couponId : 'all coupons'} products in Redis`);
+
+        return res.json({ success: true, data: result.rows });
 
     } catch (error) {
         console.error("Active Coupon Products Error:", error);
@@ -217,14 +259,24 @@ const ActiveCouponProducts = async (req, res) => {
             message: `Error fetching products: ${error.message}`
         });
     }
-}
-
-
+};
 
 const getAllCouponsForDisplay = async (req, res) => {
     const client = await pool.connect();
+    const cacheKey = "coupons:all";
 
     try {
+        // 1. Check Redis cache
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            // console.log("📦 Serving all coupons from Redis cache");
+            return res.status(200).json({
+                success: true,
+                data: JSON.parse(cachedData)
+            });
+        }
+
+        // 2. Query DB
         const result = await client.query(
             `SELECT * 
              FROM public."CouponsMaster" 
@@ -232,10 +284,16 @@ const getAllCouponsForDisplay = async (req, res) => {
              ORDER BY "ID" ASC`
         );
 
-        res.json({
-            success: true,
-            data: result.rows
-        });
+        // 3. Store in Redis
+        await redis.set(
+            cacheKey,
+            JSON.stringify(result.rows),
+            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        );
+        // console.log("💾 Stored all coupons in Redis");
+
+        res.json({ success: true, data: result.rows });
+
     } catch (err) {
         console.error("Error fetching coupons:", err);
         res.status(500).json({
@@ -246,8 +304,6 @@ const getAllCouponsForDisplay = async (req, res) => {
         client.release();
     }
 };
-
-// module.exports = { getAllCoupons };
 
 
 module.exports = {
