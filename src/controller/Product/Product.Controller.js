@@ -815,10 +815,10 @@ const toggleProductSlideshow = async (req, res) => {
 
         // 1️⃣ Check if product exists and is active
         const checkQuery = `
-      SELECT "IsSlidShow"
-      FROM "ProductMaster"
-      WHERE "ID" = $1 AND "IsActive" = true
-    `;
+        SELECT "IsSlidShow"
+        FROM "ProductMaster"
+        WHERE "ID" = $1 AND "IsActive" = true
+        `;
         const { rows } = await pool.query(checkQuery, [productId]);
 
         if (rows.length === 0) {
@@ -878,25 +878,25 @@ const getSlideshowProducts = async (req, res) => {
 
     try {
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log("📦 Serving slideshow products from Redis cache");
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData),
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log("📦 Serving slideshow products from Redis cache");
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData),
+        //     });
+        // }
 
         // 2. Query DB
         const query = `SELECT * FROM "V_SlideshowProducts"`;
         const { rows } = await pool.query(query);
 
         // 3. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(rows),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(rows),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log("💾 Stored slideshow products in Redis");
 
         return res.status(200).json({ success: true, data: rows });
