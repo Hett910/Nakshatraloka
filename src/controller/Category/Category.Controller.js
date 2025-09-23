@@ -161,18 +161,18 @@ const saveCategory = async (req, res) => {
 
 
 const getAllCategory = async (req, res) => {
-    const cacheKey = "all_categories";
+    // const cacheKey = "all_categories";
 
     try {
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log("📦 Serving all categories from Redis cache");
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData),
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log("📦 Serving all categories from Redis cache");
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData),
+        //     });
+        // }
 
         // 2. Query DB
         const query = `SELECT * FROM public."v_getallcatogary"`;
@@ -180,8 +180,8 @@ const getAllCategory = async (req, res) => {
 
         if (rows.length > 0) {
             // 3. Store in Redis with expiration
-            await redis.set(cacheKey, JSON.stringify(rows), { EX: 600 }); // cache for 10 min
-            console.log("💾 Stored all categories in Redis");
+            // await redis.set(cacheKey, JSON.stringify(rows), { EX: 600 }); // cache for 10 min
+            // console.log("💾 Stored all categories in Redis");
 
             return res.status(200).json({ success: true, data: rows });
         } else {
