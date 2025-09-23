@@ -40,12 +40,19 @@ app.use(helmet());
 app.use(hpp());
 
 //Rate Limited
-// app.use(rateLimiter({
-//     windowMs: 15 * 60 * 1000,
-//     max: 100,
-//     standardHeaders: true,
-//     legacyHeaders: false,
-// }))
+const limiter = rateLimiter({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 500,                  // limit each IP to 100 requests per window
+    standardHeaders: true,     // Return rate limit info in `RateLimit-*` headers
+    legacyHeaders: false,      // Disable `X-RateLimit-*` headers
+    message: "Too many requests from this IP, please try again after 15 minutes"
+});
+
+
+// Apply globally
+app.use(limiter);
+
+
 
 (async () => {
     await connectRedis();
