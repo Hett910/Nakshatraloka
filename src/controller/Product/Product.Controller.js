@@ -248,11 +248,11 @@ const getAllProducts = async (req, res) => {
 
     try {
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log("📦 Serving all products from Redis cache");
-            return res.status(200).json(JSON.parse(cachedData));
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log("📦 Serving all products from Redis cache");
+        //     return res.status(200).json(JSON.parse(cachedData));
+        // }
 
         // 2. Query DB
         const { rows } = await pool.query(`SELECT * FROM fn_get_products();`);
@@ -264,11 +264,11 @@ const getAllProducts = async (req, res) => {
         const response = { success: true, data: rows };
 
         // 3. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(response),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(response),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log("💾 Stored all products in Redis");
 
         res.status(200).json(response);
@@ -334,11 +334,11 @@ const getProductById = async (req, res) => {
         const cacheKey = `product:id:${productId}`;
 
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log(`📦 Serving product ${productId} from Redis cache`);
-            return res.status(200).json(JSON.parse(cachedData));
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log(`📦 Serving product ${productId} from Redis cache`);
+        //     return res.status(200).json(JSON.parse(cachedData));
+        // }
 
         // 2. Query DB
         const { rows } = await pool.query(
@@ -365,11 +365,11 @@ const getProductById = async (req, res) => {
         const response = { success: true, data: { product } };
 
         // 3. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(response),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(response),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log(`💾 Stored product ${productId} in Redis`);
 
         res.status(200).json(response);
@@ -411,14 +411,14 @@ const GetProductForScreen = async (req, res) => {
 
     try {
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log("📦 Serving top 4 products from Redis cache");
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData),
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log("📦 Serving top 4 products from Redis cache");
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData),
+        //     });
+        // }
 
         // 2. Query DB
         const { rows } = await pool.query(`SELECT * FROM "V_Four_Product";`);
@@ -428,11 +428,11 @@ const GetProductForScreen = async (req, res) => {
         }
 
         // 3. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(rows),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(rows),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log("💾 Stored top 4 products in Redis");
 
         res.status(200).json({ success: true, data: rows });
@@ -450,14 +450,14 @@ const GetFourCategories = async (req, res) => {
 
     try {
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log("📦 Serving top 4 categories from Redis cache");
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData),
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log("📦 Serving top 4 categories from Redis cache");
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData),
+        //     });
+        // }
 
         // 2. Query DB
         const { rows } = await pool.query(`SELECT * FROM "V_Four_Categories";`);
@@ -467,11 +467,11 @@ const GetFourCategories = async (req, res) => {
         }
 
         // 3. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(rows),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(rows),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log("💾 Stored top 4 categories in Redis");
 
         res.status(200).json({ success: true, data: rows });
@@ -563,11 +563,11 @@ const GetProductDetails = async (req, res) => {
         const cacheKey = `product:${productId}`;
 
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log(`📦 Serving product ${productId} from Redis cache`);
-            return res.status(200).json(JSON.parse(cachedData));
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log(`📦 Serving product ${productId} from Redis cache`);
+        //     return res.status(200).json(JSON.parse(cachedData));
+        // }
 
         // 2. Query DB for product
         const productQuery = `
@@ -593,11 +593,11 @@ const GetProductDetails = async (req, res) => {
         const response = { success: true, product: product[0], images };
 
         // 4. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(response),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(response),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log(`💾 Stored product ${productId} in Redis`);
 
         res.status(200).json(response);
@@ -622,14 +622,14 @@ const getFilteredProducts = async (req, res) => {
         const cacheKey = `products:filtered:${minPrice || 'null'}:${maxPrice || 'null'}:${categoryName || 'null'}:${rating || 'null'}`;
 
         // 2. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log("📦 Serving filtered products from Redis cache");
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData),
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log("📦 Serving filtered products from Redis cache");
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData),
+        //     });
+        // }
 
         // 3. Query DB
         const query = `SELECT * FROM public.get_filtered_products($1, $2, $3, $4);`;
@@ -637,11 +637,11 @@ const getFilteredProducts = async (req, res) => {
         const result = await client.query(query, values);
 
         // 4. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(result.rows),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(result.rows),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log("💾 Stored filtered products in Redis");
 
         res.status(200).json({ success: true, data: result.rows });
@@ -672,14 +672,14 @@ const GetProductsByCategory = async (req, res) => {
         const offset = (pageNum - 1) * limitNum;
 
         // 1. Generate Redis cache key
-        const cacheKey = `products:category:${categoryNameClean}:page:${pageNum}:limit:${limitNum}`;
+        // const cacheKey = `products:category:${categoryNameClean}:page:${pageNum}:limit:${limitNum}`;
 
         // 2. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log(`📦 Serving category "${categoryNameClean}" page ${pageNum} from Redis cache`);
-            return res.status(200).json(JSON.parse(cachedData));
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log(`📦 Serving category "${categoryNameClean}" page ${pageNum} from Redis cache`);
+        //     return res.status(200).json(JSON.parse(cachedData));
+        // }
 
         // 3. Query DB
         const sql = `
@@ -702,11 +702,11 @@ const GetProductsByCategory = async (req, res) => {
         };
 
         // 4. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(response),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(response),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log(`💾 Stored category "${categoryNameClean}" page ${pageNum} in Redis`);
 
         res.status(200).json(response);
@@ -761,18 +761,18 @@ const getFeaturedProducts = async (req, res) => {
 
 const GetProductForCoupon = async (req, res) => {
     const client = await pool.connect();
-    const cacheKey = "products:active";
+    // const cacheKey = "products:active";
 
     try {
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log("📦 Serving active products from Redis cache");
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData),
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log("📦 Serving active products from Redis cache");
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData),
+        //     });
+        // }
 
         // 2. Query DB
         const result = await client.query(
@@ -782,11 +782,11 @@ const GetProductForCoupon = async (req, res) => {
         );
 
         // 3. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(result.rows),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(result.rows),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log("💾 Stored active products in Redis");
 
         res.status(200).json({ success: true, data: result.rows });

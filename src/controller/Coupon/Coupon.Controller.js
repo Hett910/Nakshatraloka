@@ -64,17 +64,17 @@ const getAllCoupons = async (req, res) => {
 
     try {
         const { couponId } = req.query; // optional
-        const cacheKey = couponId ? `coupons:${couponId}` : `coupons:all`;
+        // const cacheKey = couponId ? `coupons:${couponId}` : `coupons:all`;
 
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log(`📦 Serving ${couponId ? 'coupon ' + couponId : 'all coupons'} from Redis cache`);
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData)
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log(`📦 Serving ${couponId ? 'coupon ' + couponId : 'all coupons'} from Redis cache`);
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData)
+        //     });
+        // }
 
         // 2. Query DB
         const query = `SELECT * FROM fn_get_coupons($1);`;
@@ -82,11 +82,11 @@ const getAllCoupons = async (req, res) => {
         const { rows } = await pool.query(query, values);
 
         // 3. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(rows),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(rows),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log(`💾 Stored ${couponId ? 'coupon ' + couponId : 'all coupons'} in Redis`);
 
         return res.status(200).json({ success: true, data: rows });
@@ -151,14 +151,14 @@ const CouponUsage = async (req, res) => {
         const cacheKey = code ? `coupon_usage:${code}` : `coupon_usage:all`;
 
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log(`📦 Serving coupon usage ${code || 'all'} from Redis cache`);
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData),
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log(`📦 Serving coupon usage ${code || 'all'} from Redis cache`);
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData),
+        //     });
+        // }
 
         // 2. Query DB
         const result = await pool.query(
@@ -171,11 +171,11 @@ const CouponUsage = async (req, res) => {
         }
 
         // 3. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(result.rows),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(result.rows),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log(`💾 Stored coupon usage ${code || 'all'} in Redis`);
 
         res.json({ success: true, data: result.rows });
@@ -200,17 +200,17 @@ const ActiveCouponProducts = async (req, res) => {
 
     try {
         const { couponId } = req.query; // Optional filter by coupon ID
-        const cacheKey = couponId ? `coupon_products:${couponId}` : `coupon_products:all`;
+        // const cacheKey = couponId ? `coupon_products:${couponId}` : `coupon_products:all`;
 
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log(`📦 Serving ${couponId ? 'coupon ' + couponId : 'all coupons'} products from Redis cache`);
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData)
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log(`📦 Serving ${couponId ? 'coupon ' + couponId : 'all coupons'} products from Redis cache`);
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData)
+        //     });
+        // }
 
         // 2. Query DB
         const query = `
@@ -243,11 +243,11 @@ const ActiveCouponProducts = async (req, res) => {
         }
 
         // 3. Store result in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(result.rows),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(result.rows),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log(`💾 Stored ${couponId ? 'coupon ' + couponId : 'all coupons'} products in Redis`);
 
         return res.json({ success: true, data: result.rows });
@@ -268,13 +268,13 @@ const getAllCouponsForDisplay = async (req, res) => {
     try {
         // 1. Check Redis cache
         const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log("📦 Serving all coupons from Redis cache");
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData)
-            });
-        }
+        // if (cachedData) {
+        //     // console.log("📦 Serving all coupons from Redis cache");
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData)
+        //     });
+        // }
 
         // 2. Query DB
         const result = await client.query(
@@ -285,11 +285,11 @@ const getAllCouponsForDisplay = async (req, res) => {
         );
 
         // 3. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(result.rows),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(result.rows),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log("💾 Stored all coupons in Redis");
 
         res.json({ success: true, data: result.rows });

@@ -257,17 +257,17 @@ const getAllFeaturedCategory = async (req, res) => {
 const getCatogaryById = async (req, res) => {
     try {
         const { id } = req.params;
-        const cacheKey = `category:${id}`;
+        // const cacheKey = `category:${id}`;
 
         // 1. Check Redis cache
-        const cachedCategory = await redis.get(cacheKey);
-        if (cachedCategory) {
-            // console.log(`📦 Serving category ${id} from Redis cache`);
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedCategory),
-            });
-        }
+        // const cachedCategory = await redis.get(cacheKey);
+        // if (cachedCategory) {
+        //     // console.log(`📦 Serving category ${id} from Redis cache`);
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedCategory),
+        //     });
+        // }
 
         // 2. Query DB
         const query = ` 
@@ -285,7 +285,7 @@ const getCatogaryById = async (req, res) => {
         }
 
         // 3. Store in Redis with expiration
-        await redis.set(cacheKey, JSON.stringify(rows[0]), { EX: 600 }); // 10 min cache
+        // await redis.set(cacheKey, JSON.stringify(rows[0]), { EX: 600 }); // 10 min cache
         // console.log(`💾 Stored category ${id} in Redis`);
 
         return res.status(200).json({

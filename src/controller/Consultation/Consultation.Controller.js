@@ -117,17 +117,17 @@ const saveConsultation = async (req, res) => {
 const getConsultations = async (req, res) => {
     try {
         const { id } = req.params; // optional ID
-        const cacheKey = id ? `consultation:${id}` : `consultations:all`;
+        // const cacheKey = id ? `consultation:${id}` : `consultations:all`;
 
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log(`📦 Serving ${id ? 'consultation ' + id : 'all consultations'} from Redis cache`);
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData)
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log(`📦 Serving ${id ? 'consultation ' + id : 'all consultations'} from Redis cache`);
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData)
+        //     });
+        // }
 
         // 2. Query DB
         let query = `SELECT * FROM public."v_consultations" WHERE "IsActive" = TRUE`;
@@ -143,11 +143,11 @@ const getConsultations = async (req, res) => {
         const result = await pool.query(query, params);
 
         // 3. Store result in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(result.rows),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(result.rows),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log(`💾 Stored ${id ? 'consultation ' + id : 'all consultations'} in Redis`);
 
         return res.status(200).json({

@@ -60,14 +60,14 @@ const getAllConsultationTypes = async (req, res) => {
 
     try {
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log("📦 Serving all consultation types from Redis cache");
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData),
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log("📦 Serving all consultation types from Redis cache");
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData),
+        //     });
+        // }
 
         // 2. Query DB
         const result = await client.query(
@@ -75,11 +75,11 @@ const getAllConsultationTypes = async (req, res) => {
         );
 
         // 3. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(result.rows),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(result.rows),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log("💾 Stored all consultation types in Redis");
 
         res.status(200).json({ success: true, data: result.rows });
@@ -95,17 +95,17 @@ const getConsultationTypeById = async (req, res) => {
     const client = await pool.connect();
     try {
         const { id } = req.params;
-        const cacheKey = `consultation_type:${id}`;
+        // const cacheKey = `consultation_type:${id}`;
 
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log(`📦 Serving consultation type ${id} from Redis cache`);
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData),
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log(`📦 Serving consultation type ${id} from Redis cache`);
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData),
+        //     });
+        // }
 
         // 2. Query DB
         const result = await client.query(
@@ -118,11 +118,11 @@ const getConsultationTypeById = async (req, res) => {
         }
 
         // 3. Store in Redis with TTL
-        await redis.set(
-            cacheKey,
-            JSON.stringify(result.rows[0]),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(result.rows[0]),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log(`💾 Stored consultation type ${id} in Redis`);
 
         res.status(200).json({ success: true, data: result.rows[0] });

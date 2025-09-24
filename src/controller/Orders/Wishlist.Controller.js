@@ -63,13 +63,13 @@ const saveWishlist = async (req, res) => {
 const listWishlist = async (req, res) => {
   try {
     const userId = req.user.id;
-    let cacheKey;
+    // let cacheKey;
 
-    if(!userId) {
+    if (!userId) {
       return res.status(403).json({ success: false, message: "Please log in first." });
     }
 
-    
+
     // 2. Query DB
     let query;
     const params = [];
@@ -85,7 +85,7 @@ const listWishlist = async (req, res) => {
 
     const result = await pool.query(query, params);
 
-   
+
     return res.status(200).json({ success: true, data: result.rows });
 
   } catch (error) {

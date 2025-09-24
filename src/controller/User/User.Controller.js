@@ -103,10 +103,10 @@ const updateUser = async (req, res) => {
         // ✅ Update UserDetails
         await pool.query(
             `INSERT INTO public."UserDetails" 
-       ("UserID", "BirthDate", "BirthPlace", "BirthTime", "Gender", "Address", "FullNameAtBirth", "Created_Date") 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-       ON CONFLICT ("UserID") DO UPDATE 
-       SET "BirthDate" = EXCLUDED."BirthDate",
+            ("UserID", "BirthDate", "BirthPlace", "BirthTime", "Gender", "Address", "FullNameAtBirth", "Created_Date") 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            ON CONFLICT ("UserID") DO UPDATE 
+            SET "BirthDate" = EXCLUDED."BirthDate",
            "BirthPlace" = EXCLUDED."BirthPlace",
            "BirthTime" = EXCLUDED."BirthTime",
            "Gender" = EXCLUDED."Gender",

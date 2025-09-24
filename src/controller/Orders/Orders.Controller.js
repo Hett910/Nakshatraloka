@@ -147,20 +147,20 @@ const saveOrder = async (req, res) => {
 const listAllOrders = async (req, res) => {
     try {
         const user = req.user;
-        let cacheKey;
+        // let cacheKey;
         let query;
         let params = [];
 
         // Determine cache key based on role
         if (user.role === "admin") {
-            cacheKey = "orders:all";
+            // cacheKey = "orders:all";
             query = `
                 SELECT *
                 FROM "V_OrderDetails"
                 ORDER BY "OrderID" ASC
             `;
         } else if (user.role === "customer") {
-            cacheKey = `orders:user:${user.id}`;
+            // cacheKey = `orders:user:${user.id}`;
             query = `
                 SELECT *
                 FROM "V_OrderDetails"
@@ -173,24 +173,24 @@ const listAllOrders = async (req, res) => {
         }
 
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log(`📦 Serving orders from Redis cache for ${user.role === "admin" ? "admin" : "user " + user.id}`);
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData),
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log(`📦 Serving orders from Redis cache for ${user.role === "admin" ? "admin" : "user " + user.id}`);
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData),
+        //     });
+        // }
 
         // 2. Query DB
         const result = await pool.query(query, params);
 
         // 3. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(result.rows),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(result.rows),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log(`💾 Stored orders in Redis for ${user.role === "admin" ? "admin" : "user " + user.id}`);
 
         return res.status(200).json({ success: true, data: result.rows });
@@ -261,17 +261,17 @@ const getOrderById = async (req, res) => {
             return res.status(403).json({ success: false, message: "Access Denied" });
         }
 
-        const cacheKey = `order:${id}`;
+        // const cacheKey = `order:${id}`;
 
         // 1. Check Redis cache
-        const cachedData = await redis.get(cacheKey);
-        if (cachedData) {
-            // console.log(`📦 Serving order ${id} from Redis cache`);
-            return res.status(200).json({
-                success: true,
-                data: JSON.parse(cachedData),
-            });
-        }
+        // const cachedData = await redis.get(cacheKey);
+        // if (cachedData) {
+        //     // console.log(`📦 Serving order ${id} from Redis cache`);
+        //     return res.status(200).json({
+        //         success: true,
+        //         data: JSON.parse(cachedData),
+        //     });
+        // }
 
         // 2. Query DB
         const query = `
@@ -290,11 +290,11 @@ const getOrderById = async (req, res) => {
         }
 
         // 3. Store in Redis
-        await redis.set(
-            cacheKey,
-            JSON.stringify(result.rows[0]),
-            { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        );
+        // await redis.set(
+        //     cacheKey,
+        //     JSON.stringify(result.rows[0]),
+        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
+        // );
         // console.log(`💾 Stored order ${id} in Redis`);
 
         return res.json({ success: true, data: result.rows[0] });
