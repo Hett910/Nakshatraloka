@@ -17,10 +17,17 @@ router.get(
       // ✅ req.user is { user, token } from googleAuth.js
       const { user, token } = req.user;
 
-      res.redirect(`${process.env.FRONTEND_URL}/auth/success?token=${token}`);
+      const redirectURL =
+        process.env.NODE_ENV === "production"
+          ? `${process.env.FRONTEND_URL}/auth/success?token=${token}`
+          : `${process.env.FRONTEND_LOCAL_URL}/auth/success?token=${token}`;
 
-      // res.redirect(`${process.env.FRONTEND_LOCAL_URL}/auth/success?token=${token}`);
+      console.log("Redirecting user to:", redirectURL);
+      console.log("NODE_ENV:", process.env.NODE_ENV);
+      console.log("Frontend URL being used:", redirectURL);
 
+
+      res.redirect(redirectURL);
 
       res.json({
         success: true,
