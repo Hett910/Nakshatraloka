@@ -27,8 +27,8 @@ router.get(
       }
 
       const redirectURL = `${frontendUrl}/auth/success?token=${token}`;
-      console.log("✅ Redirecting user to:", redirectURL);
-      console.log("NODE_ENV:", process.env.NODE_ENV);
+      // console.log("✅ Redirecting user to:", redirectURL);
+      // console.log("NODE_ENV:", process.env.NODE_ENV);
 
       res.redirect(redirectURL);
     } catch (error) {
