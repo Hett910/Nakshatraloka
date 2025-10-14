@@ -1,6 +1,6 @@
 const { validationResult } = require('express-validator');
-const pool = require('../../utils/PostgraceSql.Connection'); // Adjust path accordingly
-const { redis } = require('../../utils/redisClient');
+const pool = require('../../utils/PostgraceSql.Connection');
+const { redisUtils } = require('../../utils/redisClient'); // Import redisUtils
 
 const saveConsultation = async (req, res) => {
     try {
@@ -102,6 +102,10 @@ const saveConsultation = async (req, res) => {
 
         const result = await pool.query(query, values);
 
+        // Clear consultations cache after save/update
+        await redisUtils.delPattern('consultations:*');
+        console.log('🗑️ Consultations cache cleared after save');
+
         return res.json({
             success: true,
             message: id && id > 0 ? "Consultation updated successfully" : "Consultation saved successfully",
@@ -117,42 +121,32 @@ const saveConsultation = async (req, res) => {
 const getConsultations = async (req, res) => {
     try {
         const { id } = req.params; // optional ID
-        // const cacheKey = id ? `consultation:${id}` : `consultations:all`;
+        const cacheKey = id ? `consultation:${id}` : `consultations:all`;
 
-        // 1. Check Redis cache
-        // const cachedData = await redis.get(cacheKey);
-        // if (cachedData) {
-        //     // console.log(`📦 Serving ${id ? 'consultation ' + id : 'all consultations'} from Redis cache`);
-        //     return res.status(200).json({
-        //         success: true,
-        //         data: JSON.parse(cachedData)
-        //     });
-        // }
+        // Use cacheable pattern for consultations data
+        const { data, cached } = await redisUtils.cacheable(
+            cacheKey,
+            async () => {
+                let query = `SELECT * FROM public."v_consultations" WHERE "IsActive" = TRUE`;
+                const params = [];
 
-        // 2. Query DB
-        let query = `SELECT * FROM public."v_consultations" WHERE "IsActive" = TRUE`;
-        const params = [];
+                if (id) {
+                    query += ` AND "ID" = $1`;
+                    params.push(id);
+                }
 
-        if (id) {
-            query += ` AND "ID" = $1`;
-            params.push(id);
-        }
+                query += ` ORDER BY "BookingDate" DESC`;
 
-        query += ` ORDER BY "BookingDate" DESC`;
-
-        const result = await pool.query(query, params);
-
-        // 3. Store result in Redis
-        // await redis.set(
-        //     cacheKey,
-        //     JSON.stringify(result.rows),
-        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        // );
-        // console.log(`💾 Stored ${id ? 'consultation ' + id : 'all consultations'} in Redis`);
+                const result = await pool.query(query, params);
+                return result.rows.length > 0 ? result.rows : [];
+            },
+            600 // 10 minutes TTL for consultations
+        );
 
         return res.status(200).json({
             success: true,
-            data: result.rows
+            data,
+            cached // Optional: to know if data came from cache
         });
 
     } catch (error) {
@@ -164,8 +158,6 @@ const getConsultations = async (req, res) => {
         });
     }
 };
-
-
 
 const deleteConsultation = async (req, res) => {
     const user = req.user;
@@ -184,6 +176,10 @@ const deleteConsultation = async (req, res) => {
         `;
 
         await pool.query(query, [id]);
+
+        // Clear consultations cache after deletion
+        await redisUtils.delPattern('consultations:*');
+        console.log('🗑️ Consultations cache cleared after deletion');
 
         res.json({
             success: true,
@@ -215,6 +211,10 @@ const updateConsultationStaus = async (req, res) => {
 
         await pool.query(query, [status, id]);
 
+        // Clear consultations cache after status update
+        await redisUtils.delPattern('consultations:*');
+        console.log('🗑️ Consultations cache cleared after status update');
+
         res.json({
             success: true,
             message: 'Consultation status updated successfully'
@@ -225,7 +225,6 @@ const updateConsultationStaus = async (req, res) => {
         res.status(500).json({ success: false, message: 'Internal Server Error', error: error.message });
     }
 };
-
 
 module.exports = {
     Consultation: {
