@@ -1,54 +1,5 @@
 const pool = require('../../utils/PostgraceSql.Connection');
-const { redis } = require('../../utils/redisClient');
-
-// const saveCart = async (req, res) => {
-//     const user = req.user;
-
-//     if (!user.id) {
-//         return res.status(403).json({ success: false, message: "Please log in first." });
-//     }
-
-//     try {
-//         const { productId } = req.body;
-
-//         if (!productId) {
-//             return res.status(400).json({ success: false, message: "Product ID is required." });
-//         }
-
-//         const userId = user.id; // Ensure that user object contains 'id'
-
-//         // Check if this product is already in the user's cart and active
-//         const checkQuery = `
-//             SELECT * FROM public."Cart"
-//             WHERE "UserID" = $1 AND "ProductID" = $2 AND "IsActive" = true
-//         `;
-//         const checkResult = await pool.query(checkQuery, [userId, productId]);
-
-//         if (checkResult.rows.length > 0) {
-//             // If it already exists, you may decide to return or update something else
-//             return res.status(200).json({ success: true, message: "Product already in cart." });
-//         } else {
-//             // Insert new record
-//             const insertQuery = `
-//                 INSERT INTO public."Cart" ("UserID", "ProductID", "IsActive")
-//                 VALUES ($1, $2, true)
-//                 RETURNING *
-//             `;
-//             const insertResult = await pool.query(insertQuery, [userId, productId]);
-
-//             return res.status(201).json({
-//                 success: true,
-//                 message: "Product added to cart successfully.",
-//                 cartItem: insertResult.rows[0]
-//             });
-//         }
-
-//     } catch (error) {
-//         console.error('Error saving cart:', error);
-//         return res.status(500).json({ success: false, message: 'Internal server error' });
-//     }
-// };
-
+const { redisUtils } = require('../../utils/redisClient'); // Import redisUtils
 
 const saveCart = async (req, res) => {
     const user = req.user;
@@ -64,7 +15,7 @@ const saveCart = async (req, res) => {
             return res.status(400).json({ success: false, message: "Product ID is required." });
         }
 
-        const userId = user.id; // Ensure that user object contains 'id'
+        const userId = user.id;
 
         // Check if this product is already in the user's cart
         const checkQuery = `
@@ -72,6 +23,8 @@ const saveCart = async (req, res) => {
             WHERE "UserID" = $1 AND "ProductID" = $2
         `;
         const checkResult = await pool.query(checkQuery, [userId, productId]);
+
+        let result;
 
         if (checkResult.rows.length > 0) {
             // Toggle IsActive
@@ -83,11 +36,16 @@ const saveCart = async (req, res) => {
                 RETURNING *
             `;
             const toggleResult = await pool.query(toggleQuery, [!currentStatus, checkResult.rows[0].ID]);
+            result = toggleResult.rows[0];
+
+            // Clear user's cart cache after update
+            await redisUtils.del(`cart:${userId}`);
+            console.log('🗑️ Cart cache cleared after update');
 
             return res.status(200).json({
                 success: true,
                 message: `Cart item ${!currentStatus ? 'activated' : 'deactivated'} successfully.`,
-                cartItem: toggleResult.rows[0]
+                cartItem: result
             });
         } else {
             // Insert new record
@@ -97,11 +55,16 @@ const saveCart = async (req, res) => {
                 RETURNING *
             `;
             const insertResult = await pool.query(insertQuery, [userId, productId]);
+            result = insertResult.rows[0];
+
+            // Clear user's cart cache after insert
+            await redisUtils.del(`cart:${userId}`);
+            console.log('🗑️ Cart cache cleared after insert');
 
             return res.status(201).json({
                 success: true,
                 message: "Product added to cart successfully.",
-                cartItem: insertResult.rows[0]
+                cartItem: result
             });
         }
 
@@ -111,9 +74,7 @@ const saveCart = async (req, res) => {
     }
 };
 
-
 const updateCart = async (req, res) => {
-
     const user = req.user;
     if (!user.id) {
         return res.status(403).json({ success: false, message: "Please log in first." });
@@ -134,8 +95,11 @@ const updateCart = async (req, res) => {
         `;
         const updateResult = await pool.query(updateQuery, [user.id, productId]);
 
-
         if (updateResult.rowCount > 0) {
+            // Clear user's cart cache after removal
+            await redisUtils.del(`cart:${user.id}`);
+            console.log('🗑️ Cart cache cleared after removal');
+
             return res.status(200).json({ success: true, message: "Product removed from cart." });
         } else {
             return res.status(404).json({ success: false, message: "Product not found in cart." });
@@ -146,85 +110,6 @@ const updateCart = async (req, res) => {
         return res.status(500).json({ success: false, message: 'Internal Server Error', error: error.message });
     }
 };
-// const UpdateCartData = async (req, res) => {
-//     const user = req.user;
-
-//     if (!user?.id) {
-//         return res.status(403).json({ success: false, message: "Please log in first." });
-//     }
-
-//     try {
-//         const { cartId, quantity, selectedOptions } = req.body;
-
-//         if (!cartId) {
-//             return res.status(400).json({ success: false, message: "Cart ID is required." });
-//         }
-
-//         // Validate that either quantity or selectedOptions is provided
-//         if (quantity === undefined && !selectedOptions) {
-//             return res.status(400).json({ success: false, message: "Nothing to update." });
-//         }
-
-//         const userId = user.id;
-
-//         // Check if the cart item belongs to the user and is active
-//         const checkQuery = `
-//             SELECT * FROM public."Cart"
-//             WHERE "ID" = $1 AND "UserID" = $2 AND "IsActive" = true AND "IsOrdered" = false
-//         `;
-//         const checkResult = await pool.query(checkQuery, [cartId, userId]);
-
-//         if (checkResult.rows.length === 0) {
-//             return res.status(404).json({ success: false, message: "Cart item not found or cannot be updated." });
-//         }
-
-//         // Build dynamic update query parts
-//         let updateFields = [];
-//         let values = [];
-//         let paramIndex = 1;
-
-//         if (quantity !== undefined) {
-//             updateFields.push(`"Quantity" = $${paramIndex}`);
-//             values.push(quantity);
-//             paramIndex++;
-//         }
-
-//         if (selectedOptions !== undefined) {
-//             updateFields.push(`"SelectedOptions" = $${paramIndex}`);
-//             values.push(JSON.stringify(selectedOptions));
-//             paramIndex++;
-//         }
-
-//         // Add UpdatedAt timestamp
-//         updateFields.push(`"UpdatedAt" = now()`);
-
-//         const updateQuery = `
-//             UPDATE public."Cart"
-//             SET ${updateFields.join(", ")}
-//             WHERE "ID" = $${paramIndex} AND "UserID" = $${paramIndex + 1}
-//             RETURNING *
-//         `;
-//         values.push(cartId, userId);
-
-//         const { rows } = await pool.query(updateQuery, values);
-
-//         if (rows.length === 0) {
-//             return res.status(500).json({ success: false, message: "Failed to update cart item." });
-//         }
-
-//         const updatedCartItem = rows[0];
-
-//         return res.status(200).json({
-//             success: true,
-//             message: "Cart item updated successfully.",
-//             cartItem: updatedCartItem
-//         });
-
-//     } catch (error) {
-//         console.error('Error updating cart:', error);
-//         return res.status(500).json({ success: false, message: 'Internal server error', error: error.message });
-//     }
-// }
 
 const UpdateCartData = async (req, res) => {
     const user = req.user;
@@ -247,10 +132,10 @@ const UpdateCartData = async (req, res) => {
 
         // 1️⃣ Find the actual cart row for this user and ProductID
         const checkQuery = `
-      SELECT * FROM public."Cart"
-      WHERE "ProductID" = $1 AND "UserID" = $2 AND "IsActive" = true AND "IsOrdered" = false
-      LIMIT 1
-    `;
+            SELECT * FROM public."Cart"
+            WHERE "ProductID" = $1 AND "UserID" = $2 AND "IsActive" = true AND "IsOrdered" = false
+            LIMIT 1
+        `;
         const checkResult = await pool.query(checkQuery, [cartId, userId]);
 
         if (checkResult.rows.length === 0) {
@@ -280,14 +165,18 @@ const UpdateCartData = async (req, res) => {
 
         // 3️⃣ Update the cart row
         const updateQuery = `
-      UPDATE public."Cart"
-      SET ${updateFields.join(", ")}
-      WHERE "ID" = $${paramIndex}
-      RETURNING *
-    `;
+            UPDATE public."Cart"
+            SET ${updateFields.join(", ")}
+            WHERE "ID" = $${paramIndex}
+            RETURNING *
+        `;
         values.push(cartRowId);
 
         const { rows } = await pool.query(updateQuery, values);
+
+        // Clear user's cart cache after update
+        await redisUtils.del(`cart:${userId}`);
+        console.log('🗑️ Cart cache cleared after data update');
 
         return res.status(200).json({
             success: true,
@@ -301,8 +190,6 @@ const UpdateCartData = async (req, res) => {
     }
 };
 
-
-
 const listUserCart = async (req, res) => {
     const user = req.user;
     if (!user?.id) {
@@ -310,25 +197,38 @@ const listUserCart = async (req, res) => {
     }
 
     try {
-       
-        // 2. Query from DB
-        const client = await pool.connect();
-        const query = `
-            SELECT *
-            FROM public."V_UserCartDetails"
-            WHERE "UserID" = $1 AND "IsActive" = true
-            ORDER BY "CreaatedAt" DESC;
-        `;
-        const { rows } = await client.query(query, [user.id]);
-        client.release();
+        const cacheKey = `cart:${user.id}`;
 
-        const dataWithImages = rows.map(item => ({
-            ...item,
-            PrimaryImage: item.PrimaryImage || null
-        }));
+        // Use cacheable pattern for cart data
+        const { data, cached } = await redisUtils.cacheable(
+            cacheKey,
+            async () => {
+                const client = await pool.connect();
+                const query = `
+                    SELECT *
+                    FROM public."V_UserCartDetails"
+                    WHERE "UserID" = $1 AND "IsActive" = true
+                    ORDER BY "CreaatedAt" DESC;
+                `;
+                const { rows } = await client.query(query, [user.id]);
+                client.release();
 
+                // Process images
+                const dataWithImages = rows.map(item => ({
+                    ...item,
+                    PrimaryImage: item.PrimaryImage || null
+                }));
 
-        return res.status(200).json({ success: true, data: dataWithImages });
+                return dataWithImages.length > 0 ? dataWithImages : [];
+            },
+            300 // 5 minutes TTL for cart (changes frequently)
+        );
+
+        return res.status(200).json({ 
+            success: true, 
+            data,
+            cached // Optional: to know if data came from cache
+        });
     } catch (error) {
         console.error(`Error listing user cart: ${error}`);
         return res.status(500).json({
@@ -338,6 +238,7 @@ const listUserCart = async (req, res) => {
         });
     }
 };
+
 module.exports = {
     Cart: {
         saveCart,
