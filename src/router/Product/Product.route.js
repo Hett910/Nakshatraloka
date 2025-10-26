@@ -6,8 +6,8 @@ const { Product } = require('../../controller/Product/Product.Controller');
 const { uploadMiddleware } = require('../../utils/Image');
 
 
-// router.post('/saveProduct', [auth, uploadMiddleware], Product.saveProduct);
-router.post('/saveProduct', uploadMiddleware, Product.saveProduct);
+router.post('/saveProduct', [auth, uploadMiddleware], Product.saveProduct);
+// router.post('/saveProduct', uploadMiddleware, Product.saveProduct);
 router.post('/getAllProducts', Product.getAllProducts);
 // router.post('/getAllProducts', auth, Product.getAllProducts);
 // router.post('/getProductById/:id', auth, Product.getProductById);
