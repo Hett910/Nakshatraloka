@@ -53,12 +53,16 @@ const limiter = rateLimiter({
 app.use(limiter);
 
 
-
 (async () => {
-    await connectRedis();
-    const pong = await redis.ping();
-    console.log("Redis ping:", pong); // should print "PONG"
+    if (process.env.USE_REDIS === 'true') {
+        await connectRedis();
+        const pong = await redis.ping();
+        console.log("Redis ping:", pong);
+    } else {
+        console.log("⚠️ Redis is disabled (USE_REDIS=false)");
+    }
 })();
+
 
 app.use("/", MasterRouter);
 
