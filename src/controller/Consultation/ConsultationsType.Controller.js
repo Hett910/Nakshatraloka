@@ -1,5 +1,5 @@
 const pool = require("../../utils/PostgraceSql.Connection");
-const { redis } = require("../../utils/redisClient");
+const { redisUtils } = require('../../utils/redisClient'); // Import redisUtils
 
 // ✅ Create Consultation Type
 const saveConsultationType = async (req, res) => {
@@ -30,6 +30,10 @@ const saveConsultationType = async (req, res) => {
                 return res.status(404).json({ success: false, message: "Not Found" });
             }
 
+            // Clear consultation types cache after update
+            await redisUtils.delPattern('consultation_types:*');
+            console.log('🗑️ Consultation types cache cleared after update');
+
             return res.status(200).json({ success: true, message: "Updated Successfully" });
 
         } else {
@@ -42,6 +46,10 @@ const saveConsultationType = async (req, res) => {
                 [name, price, req.user.id, isActive]
             );
 
+            // Clear consultation types cache after create
+            await redisUtils.delPattern('consultation_types:*');
+            console.log('🗑️ Consultation types cache cleared after create');
+
             return res.status(201).json({ success: true, message: "Created Successfully" });
         }
 
@@ -53,36 +61,26 @@ const saveConsultationType = async (req, res) => {
     }
 };
 
-
 const getAllConsultationTypes = async (req, res) => {
     const client = await pool.connect();
-    const cacheKey = "consultation_types:all";
-
+    
     try {
-        // 1. Check Redis cache
-        // const cachedData = await redis.get(cacheKey);
-        // if (cachedData) {
-        //     // console.log("📦 Serving all consultation types from Redis cache");
-        //     return res.status(200).json({
-        //         success: true,
-        //         data: JSON.parse(cachedData),
-        //     });
-        // }
-
-        // 2. Query DB
-        const result = await client.query(
-            `SELECT * FROM public."Consultations Types" WHERE "IsActive" = TRUE ORDER BY "ID" ASC`
+        const { data, cached } = await redisUtils.cacheable(
+            'consultation_types:all',
+            async () => {
+                const result = await client.query(
+                    `SELECT * FROM public."Consultations Types" WHERE "IsActive" = TRUE ORDER BY "ID" ASC`
+                );
+                return result.rows.length > 0 ? result.rows : [];
+            },
+            600 // 10 minutes TTL for consultation types
         );
 
-        // 3. Store in Redis
-        // await redis.set(
-        //     cacheKey,
-        //     JSON.stringify(result.rows),
-        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        // );
-        // console.log("💾 Stored all consultation types in Redis");
-
-        res.status(200).json({ success: true, data: result.rows });
+        res.status(200).json({ 
+            success: true, 
+            data,
+            cached // Optional: to know if data came from cache
+        });
     } catch (error) {
         console.error("Error fetching consultation types:", error);
         res.status(500).json({ success: false, message: "Server Error" });
@@ -95,37 +93,29 @@ const getConsultationTypeById = async (req, res) => {
     const client = await pool.connect();
     try {
         const { id } = req.params;
-        // const cacheKey = `consultation_type:${id}`;
+        const cacheKey = `consultation_type:${id}`;
 
-        // 1. Check Redis cache
-        // const cachedData = await redis.get(cacheKey);
-        // if (cachedData) {
-        //     // console.log(`📦 Serving consultation type ${id} from Redis cache`);
-        //     return res.status(200).json({
-        //         success: true,
-        //         data: JSON.parse(cachedData),
-        //     });
-        // }
-
-        // 2. Query DB
-        const result = await client.query(
-            `SELECT * FROM public."Consultations Types" WHERE "ID" = $1 AND "IsActive" = TRUE`,
-            [id]
+        const { data, cached } = await redisUtils.cacheable(
+            cacheKey,
+            async () => {
+                const result = await client.query(
+                    `SELECT * FROM public."Consultations Types" WHERE "ID" = $1 AND "IsActive" = TRUE`,
+                    [id]
+                );
+                return result.rows.length > 0 ? result.rows[0] : null;
+            },
+            600 // 10 minutes TTL for single consultation type
         );
 
-        if (result.rows.length === 0) {
+        if (!data) {
             return res.status(404).json({ success: false, message: "Not Found" });
         }
 
-        // 3. Store in Redis with TTL
-        // await redis.set(
-        //     cacheKey,
-        //     JSON.stringify(result.rows[0]),
-        //     { EX: parseInt(process.env.REDIS_CACHE_TTL) }
-        // );
-        // console.log(`💾 Stored consultation type ${id} in Redis`);
-
-        res.status(200).json({ success: true, data: result.rows[0] });
+        res.status(200).json({ 
+            success: true, 
+            data,
+            cached 
+        });
     } catch (error) {
         console.error("Error fetching consultation type:", error);
         res.status(500).json({ success: false, message: "Server Error" });
@@ -133,42 +123,6 @@ const getConsultationTypeById = async (req, res) => {
         client.release();
     }
 };
-
-// // ✅ Update
-// const updateConsultationType = async (req, res) => {
-//     if (!req.user || req.user.role !== "admin") {
-//         return res.status(403).json({ success: false, message: "Access Denied" });
-//     }
-
-//     const client = await pool.connect();
-//     try {
-//         const { id } = req.params;
-//         const { name, price, isActive } = req.body;
-
-//         const result = await client.query(
-//             `UPDATE public."Consultations Types"
-//             SET "Name" = $1,
-//                 "Price" = $2,
-//                 "Updated_By" = $3,
-//                 "Updated_Date" = CURRENT_DATE,
-//                 "IsActive" = $4
-//             WHERE "ID" = $5
-//             RETURNING *`,
-//             [name, price, req.user.id, isActive, id]
-//         );
-
-//         if (result.rows.length === 0) {
-//             return res.status(404).json({ success: false, message: "Not Found" });
-//         }
-
-//         res.status(200).json({ success: true, data: result.rows[0] });
-//     } catch (error) {
-//         console.error("Error updating consultation type:", error);
-//         res.status(500).json({ success: false, message: "Server Error" });
-//     } finally {
-//         client.release();
-//     }
-// };
 
 // ✅ Delete
 const deleteConsultationType = async (req, res) => {
@@ -194,6 +148,10 @@ const deleteConsultationType = async (req, res) => {
             return res.status(404).json({ success: false, message: "Not Found" });
         }
 
+        // Clear consultation types cache after deletion
+        await redisUtils.delPattern('consultation_types:*');
+        console.log('🗑️ Consultation types cache cleared after deletion');
+
         res.status(200).json({ success: true, message: "Consultation Type Deleted Successfully" });
     } catch (error) {
         console.error("Error soft deleting consultation type:", error);
@@ -202,7 +160,6 @@ const deleteConsultationType = async (req, res) => {
         client.release();
     }
 };
-
 
 module.exports = {
     ConsultationType: {
