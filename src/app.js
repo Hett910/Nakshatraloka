@@ -10,7 +10,6 @@ const path = require('path');
 const MasterRouter = require('./router/MasterRoute.js');
 const { connectRedis, redis } = require('./utils/redisClient.js');
 
-
 dotenv.config({ debug: false });
 const app = express();
 // app.use(cors({ origin: "http://localhost:5173" }));
@@ -47,7 +46,6 @@ const limiter = rateLimiter({
     legacyHeaders: false,      // Disable `X-RateLimit-*` headers
     message: "Too many requests from this IP, please try again after 15 minutes"
 });
-
 
 // Apply globally
 app.use(limiter);

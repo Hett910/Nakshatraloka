@@ -1,7 +1,7 @@
 const express = require("express");
 const pool = require("../../utils/PostgraceSql.Connection");
 const { redis } = require("../../utils/redisClient");
-
+const Razorpay = require("razorpay")
 
 // Save or update order
 
@@ -70,20 +70,230 @@ const { redis } = require("../../utils/redisClient");
 //     }
 // };
 
-const saveOrder = async (req, res) => {
-    try {
-        // ✅ Extract userId from token instead of request body
-        const userId = req.user?.id;
+// Use environment variables
+const RAZORPAY_KEY_ID = process.env.RZP_KEY_ID;      // test or live key id
+const RAZORPAY_KEY_SECRET = process.env.RZP_KEY_SECRET;
 
-        if (!userId) {
-            return res.status(401).json({
-                success: false,
-                message: "Unauthorized: User ID missing from token."
-            });
+const razorpay = new Razorpay({
+    key_id: RAZORPAY_KEY_ID,
+    key_secret: RAZORPAY_KEY_SECRET,
+});
+
+const createRazorpayOrder = async (req, res) => {
+    try {
+        const { amount } = req.body; // amount in INR
+        if (!amount) {
+            return res.status(400).json({ success: false, message: "Amount is required" });
         }
 
+        const options = {
+            amount: amount, // convert to paise
+            currency: "INR",
+            receipt: "receipt_" + Date.now(),
+        };
+
+        const order = await razorpay.orders.create(options);
+
+        res.status(200).json({
+            success: true,
+            orderId: order.id,
+            currency: order.currency,
+            amount: order.amount,
+        });
+    } catch (error) {
+        console.error("Create Razorpay Order Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to create Razorpay order",
+            error: error.message,
+        });
+    }
+};
+
+//LATEST CODE
+// const saveOrder = async (req, res) => {
+//     try {
+//         // ✅ Extract userId from token instead of request body
+//         const userId = req.user?.id;
+
+//         if (!userId) {
+//             return res.status(401).json({
+//                 success: false,
+//                 message: "Unauthorized: User ID missing from token."
+//             });
+//         }
+
+//         const {
+//             id = 0,
+//             shippingAddress,
+//             paymentMethod,
+//             coupenId = null,
+//             orderItems = [],
+//             orderStatus = 'Pending',
+//             paymentStatus = 'Pending',
+//             orderDate = new Date().toISOString(),
+//             isActive = true,
+//             transactionId = null
+//         } = req.body;
+
+//         if (!shippingAddress || !paymentMethod || orderItems.length === 0) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Missing required fields or empty order items."
+//             });
+//         }
+
+//         const query = `
+//             SELECT public.fn_save_order(
+//                 $1, $2, $3, $4, $5,
+//                 $6, $7, $8, $9, $10, $11
+//             ) AS result
+//         `;
+
+//         const values = [
+//             userId,           // ✅ userId from token
+//             shippingAddress,
+//             paymentMethod,
+//             JSON.stringify(orderItems),
+//             id,
+//             coupenId,
+//             orderStatus,
+//             paymentStatus,
+//             orderDate,
+//             isActive,
+//             transactionId
+//         ];
+
+//         const { rows } = await pool.query(query, values);
+
+//         return res.status(200).json({
+//             success: true,
+//             message: "Order saved successfully.",
+//             orderId: rows[0].result
+//         });
+
+//     } catch (error) {
+//         console.error("Save Order Error:", error);
+
+//         const pgMessage = error?.message || "Internal Server Error";
+
+//         return res.status(400).json({
+//             success: false,
+//             message: `Save Order Error: ${pgMessage}`
+//         });
+//     }
+// };
+
+// const saveOrderData = async (orderData, userId) => {
+//     try {
+//         const {
+//             id = 0,
+//             shippingAddress,
+//             paymentMethod,
+//             coupenId = null,
+//             orderItems = [],
+//             orderStatus = 'Pending',
+//             paymentStatus = 'Pending',
+//             orderDate = new Date().toISOString(),
+//             isActive = true,
+//             transactionId = null
+//         } = orderData;
+
+//         if (!shippingAddress || !paymentMethod || orderItems.length === 0) {
+//             throw new Error("Missing required fields or empty order items.");
+//         }
+
+//         // ✅ FIRST: Verify products exist in your application layer
+//         for (const item of orderItems) {
+//             const productId = item.ProductID || item.productId;
+//             const productCheck = await pool.query(
+//                 'SELECT "ID" FROM public."ProductMaster" WHERE "ID" = $1 AND "IsActive" = true',
+//                 [productId]
+//             );
+//             console.log({ ProductID: productId })
+
+//             if (productCheck.rows.length === 0) {
+//                 throw new Error(`Product with ID ${productId} not found or inactive`);
+//             }
+//         }
+
+//         // Rest of your function...
+//         const transformedOrderItems = orderItems.map(item => ({
+//             productid: item.ProductID || item.productId,
+//             quantity: item.Quantity || item.quantity,
+//             name: item.Name || item.name,
+//             price: item.Price || item.price,
+//         }));
+//         const query = `
+//             SELECT public.fn_save_order(
+//                 $1, $2, $3, $4, $5,
+//                 $6, $7, $8, $9, $10, $11
+//             ) AS result
+//         `;
+
+//         const values = [
+//             userId,
+//             shippingAddress,
+//             paymentMethod,
+//             JSON.stringify(transformedOrderItems),
+//             id,
+//             coupenId,
+//             orderStatus,
+//             paymentStatus,
+//             orderDate,
+//             isActive,
+//             transactionId
+//         ];
+
+//         const { rows } = await pool.query(query, values);
+
+//         return {
+//             success: true,
+//             message: "Order saved successfully.",
+//             orderId: rows[0].result
+//         };
+
+//     } catch (error) {
+//         console.error("Save Order Error:", error);
+//         const pgMessage = error?.message || "Internal Server Error";
+//         return {
+//             success: false,
+//             message: `Save Order Error: ${pgMessage}`
+//         };
+//     }
+// };
+
+// const saveOrder = async (req, res) => {
+//     try {
+//         const userId = req.user?.id;
+//         if (!userId) {
+//             return res.status(401).json({
+//                 success: false,
+//                 message: "Unauthorized: User ID missing from token."
+//             });
+//         }
+
+//         const result = await saveOrderData(req.body, userId);
+
+//         if (result.success) {
+//             return res.status(200).json(result);
+//         } else {
+//             return res.status(400).json(result);
+//         }
+
+//     } catch (error) {
+//         console.error("Save Order Error:", error);
+//         return res.status(500).json({
+//             success: false,
+//             message: "Internal server error"
+//         });
+//     }
+// };
+
+// 🔹 Save order function
+const saveOrderData = async (orderData, userId, transactionId = null) => {
+    try {
         const {
-            id = 0,
             shippingAddress,
             paymentMethod,
             coupenId = null,
@@ -91,30 +301,52 @@ const saveOrder = async (req, res) => {
             orderStatus = 'Pending',
             paymentStatus = 'Pending',
             orderDate = new Date().toISOString(),
-            isActive = true,
-            transactionId = null
-        } = req.body;
+            isActive = true
+        } = orderData;
 
         if (!shippingAddress || !paymentMethod || orderItems.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: "Missing required fields or empty order items."
+            throw new Error("Missing required fields or empty order items.");
+        }
+
+        const transformedOrderItems = [];
+
+        // 🔹 Validate products in ProductSize table and get price/stock
+        for (const item of orderItems) {
+            const productId = item.ProductID || item.productid;
+            const quantity = item.Quantity || item.quantity;
+
+            const productQuery = `
+                SELECT "ID", "Price", "Stock"
+                FROM public."ProductSize"
+                WHERE "ProductID" = $1 AND "Stock" >= $2 AND "IsActive" = true
+                LIMIT 1
+            `;
+            const { rows } = await pool.query(productQuery, [productId, quantity]);
+
+            if (rows.length === 0) {
+                throw new Error(`Product with ID ${productId} not found, inactive, or insufficient stock`);
+            }
+
+            transformedOrderItems.push({
+                productid: productId,
+                quantity,
+                price: rows[0].Price
             });
         }
 
+        // 🔹 Call PostgreSQL function to save order
         const query = `
             SELECT public.fn_save_order(
-                $1, $2, $3, $4, $5,
-                $6, $7, $8, $9, $10, $11
-            ) AS result
+                $1, $2, $3, $4, 0,
+                $5, $6, $7, $8, $9, $10
+            ) AS result;
         `;
 
         const values = [
-            userId,           // ✅ userId from token
+            userId,
             shippingAddress,
             paymentMethod,
-            JSON.stringify(orderItems),
-            id,
+            JSON.stringify(transformedOrderItems),
             coupenId,
             orderStatus,
             paymentStatus,
@@ -125,24 +357,52 @@ const saveOrder = async (req, res) => {
 
         const { rows } = await pool.query(query, values);
 
-        return res.status(200).json({
+        // 🔹 Reduce stock in ProductSize after order is confirmed
+        for (const item of transformedOrderItems) {
+            await pool.query(
+                `UPDATE public."ProductSize" SET "Stock" = "Stock" - $1 WHERE "ProductID" = $2`,
+                [item.quantity, item.productid]
+            );
+        }
+
+        return {
             success: true,
             message: "Order saved successfully.",
             orderId: rows[0].result
-        });
+        };
 
     } catch (error) {
         console.error("Save Order Error:", error);
-
-        const pgMessage = error?.message || "Internal Server Error";
-
-        return res.status(400).json({
+        return {
             success: false,
-            message: `Save Order Error: ${pgMessage}`
-        });
+            message: error.message || "Internal Server Error"
+        };
     }
 };
 
+// ✅ Express route handler
+const saveOrder = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: "Unauthorized: User ID missing from token."
+            });
+        }
+
+        const result = await saveOrderData(req.body, userId);
+
+        return res.status(result.success ? 200 : 400).json(result);
+
+    } catch (error) {
+        console.error("Save Order Error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error"
+        });
+    }
+};
 
 const listAllOrders = async (req, res) => {
     try {
@@ -362,6 +622,8 @@ const updateOrderStatus = async (req, res) => {
 module.exports = {
     Order: {
         saveOrder,
+        saveOrderData,
+        createRazorpayOrder,
         listAllOrders,
         getOrderById,
         updateOrderStatus
