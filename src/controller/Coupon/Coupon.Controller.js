@@ -261,6 +261,97 @@ const getAllCouponsForDisplay = async (req, res) => {
     }
 };
 
+const ValidateCoupon = async (req, res) => {
+    try {
+        const { couponCode, productIds, products } = req.body;
+
+        // const userId = req.user?.id; // extracted from JWT middleware
+        // Normalize
+        const validProductIds =
+            productIds?.filter((id) => id != null) ||
+            products?.map((p) => p.productId).filter((id) => id != null) ||
+            [];
+
+
+        if (!couponCode || !validProductIds?.length) {
+            return res.status(400).json({
+                success: false,
+                message: "Coupon code and product IDs are required."
+            });
+        }
+
+        // Step 1: Fetch coupon details
+        const couponRes = await pool.query(
+            `SELECT * FROM "CouponsMaster"
+             WHERE "Code" = $1 AND "IsActive" = TRUE
+             AND CURRENT_DATE BETWEEN "StartDate" AND "EndDate"`,
+            [couponCode]
+        );
+
+        // console.log({ couponRes })
+        if (couponRes.rowCount === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Invalid or expired coupon."
+            });
+        }
+
+        const coupon = couponRes.rows[0];
+        console.log({coupon})
+
+        // Step 2: Check if coupon applies to given products
+        const productRes = await pool.query(
+            `SELECT COUNT(*) FROM "CouponProducts"
+            WHERE "CouponID" = $1 AND "ProductID" = ANY($2::int[])`,
+            [coupon.ID, validProductIds]
+        );
+
+        // console.log({productRes})
+
+
+
+
+        if (parseInt(productRes.rows[0].count) === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Coupon is not applicable for selected products."
+            });
+        }
+
+        // Step 3: Check if user already used this coupon (if single-use)
+        // const usageRes = await pool.query(
+        //     `SELECT COUNT(*) FROM "CoupenUsage"
+        //      WHERE "UserID" = $1 AND "CouponID" = $2`,
+        //     [userId, coupon.id]
+        // );
+
+        // if (usageRes.rows[0].count > 0 && coupon.is_single_use) {
+        //     return res.status(400).json({
+        //         success: false,
+        //         message: "You have already used this coupon."
+        //     });
+        // }
+
+        // Step 4: Return success with discount details
+        return res.status(200).json({
+            success: true,
+            message: "Coupon is valid.",
+            data: {
+                discountType: coupon.discount_type,   // e.g., 'PERCENT' or 'FLAT'
+                discountValue: parseFloat(coupon.DiscountValue) || null,
+                // couponID: coupon.ID
+            }
+        });
+
+    } catch (error) {
+        console.error("Coupon validation error:", error);
+        res.status(500).json({
+            success: false,
+            message: `Error validating coupon: ${error.message}`
+        });
+    }
+}
+
 module.exports = {
     Coupon: {
         SaveCoupon,
@@ -268,6 +359,7 @@ module.exports = {
         deleteCoupon,
         CouponUsage,
         getAllCouponsForDisplay,
-        ActiveCouponProducts
+        ActiveCouponProducts,
+        ValidateCoupon
     }
 };

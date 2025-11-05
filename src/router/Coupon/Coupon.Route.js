@@ -13,4 +13,6 @@ router.post('/CouponUsage', auth ,Coupon.CouponUsage);
 
 router.post("/getAllCouponsForDisplay", Coupon.getAllCouponsForDisplay);
 router.post("/activeCouponProducts",auth, Coupon.ActiveCouponProducts);
+
+router.post("/ValidateCoupon", auth, Coupon.ValidateCoupon);
 module.exports = router;
