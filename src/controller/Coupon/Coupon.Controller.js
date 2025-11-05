@@ -276,7 +276,7 @@ const ValidateCoupon = async (req, res) => {
         if (!couponCode || !validProductIds?.length) {
             return res.status(400).json({
                 success: false,
-                message: "Coupon code and product IDs are required."
+                message: "Coupon code and product are required."
             });
         }
 
