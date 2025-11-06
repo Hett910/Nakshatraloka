@@ -262,95 +262,113 @@ const getAllCouponsForDisplay = async (req, res) => {
 };
 
 const ValidateCoupon = async (req, res) => {
-    try {
-        const { couponCode, productIds, products } = req.body;
+  try {
+    const { couponCode, productIds, products, subtotal } = req.body;
+    const userId = req.user?.id; // ✅ from JWT middleware
 
-        // const userId = req.user?.id; // extracted from JWT middleware
-        // Normalize
-        const validProductIds =
-            productIds?.filter((id) => id != null) ||
-            products?.map((p) => p.productId).filter((id) => id != null) ||
-            [];
+    // Normalize product list
+    const validProductIds =
+      productIds?.filter((id) => id != null) ||
+      products?.map((p) => p.productId).filter((id) => id != null) ||
+      [];
 
-
-        if (!couponCode || !validProductIds?.length) {
-            return res.status(400).json({
-                success: false,
-                message: "Coupon code and product are required."
-            });
-        }
-
-        // Step 1: Fetch coupon details
-        const couponRes = await pool.query(
-            `SELECT * FROM "CouponsMaster"
-             WHERE "Code" = $1 AND "IsActive" = TRUE
-             AND CURRENT_DATE BETWEEN "StartDate" AND "EndDate"`,
-            [couponCode]
-        );
-
-        // console.log({ couponRes })
-        if (couponRes.rowCount === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Invalid or expired coupon."
-            });
-        }
-
-        const coupon = couponRes.rows[0];
-        console.log({coupon})
-
-        // Step 2: Check if coupon applies to given products
-        const productRes = await pool.query(
-            `SELECT COUNT(*) FROM "CouponProducts"
-            WHERE "CouponID" = $1 AND "ProductID" = ANY($2::int[])`,
-            [coupon.ID, validProductIds]
-        );
-
-        // console.log({productRes})
-
-
-
-
-        if (parseInt(productRes.rows[0].count) === 0) {
-            return res.status(400).json({
-                success: false,
-                message: "Coupon is not applicable for selected products."
-            });
-        }
-
-        // Step 3: Check if user already used this coupon (if single-use)
-        // const usageRes = await pool.query(
-        //     `SELECT COUNT(*) FROM "CoupenUsage"
-        //      WHERE "UserID" = $1 AND "CouponID" = $2`,
-        //     [userId, coupon.id]
-        // );
-
-        // if (usageRes.rows[0].count > 0 && coupon.is_single_use) {
-        //     return res.status(400).json({
-        //         success: false,
-        //         message: "You have already used this coupon."
-        //     });
-        // }
-
-        // Step 4: Return success with discount details
-        return res.status(200).json({
-            success: true,
-            message: "Coupon is valid.",
-            data: {
-                discountType: coupon.discount_type,   // e.g., 'PERCENT' or 'FLAT'
-                discountValue: parseFloat(coupon.DiscountValue) || null,
-                // couponID: coupon.ID
-            }
-        });
-
-    } catch (error) {
-        console.error("Coupon validation error:", error);
-        res.status(500).json({
-            success: false,
-            message: `Error validating coupon: ${error.message}`
-        });
+    if (!couponCode || validProductIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Coupon code and product details are required.",
+      });
     }
-}
+
+    // 1️⃣ Fetch coupon details
+    const couponRes = await pool.query(
+      `SELECT "ID", "Code", "DiscountType", "DiscountValue", 
+              "Min_Order_Amount", "Usage_Limit", "StartDate", "EndDate", "IsActive"
+       FROM "CouponsMaster"
+       WHERE UPPER("Code") = $1 AND "IsActive" = TRUE
+       AND NOW() BETWEEN "StartDate" AND "EndDate"
+       LIMIT 1`,
+      [couponCode.toUpperCase()]
+    );
+
+    if (couponRes.rowCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Invalid or expired coupon.",
+      });
+    }
+
+    const coupon = couponRes.rows[0];
+
+    // 2️⃣ Check applicable products
+    const productRes = await pool.query(
+      `SELECT COUNT(*) FROM "CouponProducts"
+       WHERE "CouponID" = $1 AND "ProductID" = ANY($2::int[])`,
+      [coupon.ID, validProductIds]
+    );
+
+    if (parseInt(productRes.rows[0].count) === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Coupon is not applicable for selected products.",
+      });
+    }
+
+    // 3️⃣ Check minimum order amount
+    if (subtotal && coupon.Min_Order_Amount && subtotal < coupon.Min_Order_Amount) {
+      return res.status(400).json({
+        success: false,
+        message: `Minimum order amount should be ₹${coupon.Min_Order_Amount} to apply this coupon.`,
+      });
+    }
+
+    // 4️⃣ Check global usage limit
+    const usageCountRes = await pool.query(
+      `SELECT COUNT(*) FROM "CoupenUsage" WHERE "CouponID" = $1`,
+      [coupon.ID]
+    );
+    const totalUsage = parseInt(usageCountRes.rows[0].count);
+
+    if (coupon.Usage_Limit !== null && totalUsage >= coupon.Usage_Limit) {
+      return res.status(400).json({
+        success: false,
+        message: "Coupon usage limit reached.",
+      });
+    }
+
+    // 5️⃣ Optional: Check per-user usage (if applicable)
+    const userUsageRes = await pool.query(
+      `SELECT COUNT(*) FROM "CoupenUsage" WHERE "CouponID" = $1 AND "UserID" = $2`,
+      [coupon.ID, userId]
+    );
+    if (parseInt(userUsageRes.rows[0].count) > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "You have already used this coupon.",
+      });
+    }
+
+    // 6️⃣ Everything valid — return coupon info
+    return res.status(200).json({
+      success: true,
+      message: "Coupon is valid.",
+      data: {
+        couponID: coupon.ID,
+        code: coupon.Code,
+        discountType: coupon.DiscountType, // 'PERCENT' or 'FIXED'
+        discountValue: parseFloat(coupon.DiscountValue),
+        minOrderAmount: parseFloat(coupon.Min_Order_Amount),
+        usageLimit: coupon.Usage_Limit,
+      },
+    });
+  } catch (error) {
+    console.error("Coupon validation error:", error);
+    res.status(500).json({
+      success: false,
+      message: `Error validating coupon: ${error.message}`,
+    });
+  }
+};
+
 
 module.exports = {
     Coupon: {
