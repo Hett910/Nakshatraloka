@@ -292,93 +292,121 @@ const createRazorpayOrder = async (req, res) => {
 
 // 🔹 Save order function
 const saveOrderData = async (orderData, userId, transactionId = null) => {
-    try {
-        const {
-            shippingAddress,
-            paymentMethod,
-            coupenId = null,
-            orderItems = [],
-            orderStatus = 'Pending',
-            paymentStatus = 'Pending',
-            orderDate = new Date().toISOString(),
-            isActive = true
-        } = orderData;
+  const client = await pool.connect();
+  try {
+    const {
+      shippingAddress,
+      paymentMethod,
+      couponCode = null,   // Optional coupon code from frontend
+      couponId: frontCouponId = null, // Optional numeric coupon ID from frontend
+      orderItems = [],
+      orderStatus = 'Pending',
+      paymentStatus = 'Pending',
+      orderDate = new Date().toISOString(),
+      isActive = true
+    } = orderData;
 
-        if (!shippingAddress || !paymentMethod || orderItems.length === 0) {
-            throw new Error("Missing required fields or empty order items.");
-        }
-
-        const transformedOrderItems = [];
-
-        // 🔹 Validate products in ProductSize table and get price/stock
-        for (const item of orderItems) {
-            const productId = item.ProductID || item.productid;
-            const quantity = item.Quantity || item.quantity;
-
-            const productQuery = `
-                SELECT "ID", "Price", "Stock"
-                FROM public."ProductSize"
-                WHERE "ProductID" = $1 AND "Stock" >= $2 AND "IsActive" = true
-                LIMIT 1
-            `;
-            const { rows } = await pool.query(productQuery, [productId, quantity]);
-
-            if (rows.length === 0) {
-                throw new Error(`Product with ID ${productId} not found, inactive, or insufficient stock`);
-            }
-
-            transformedOrderItems.push({
-                productid: productId,
-                quantity,
-                price: rows[0].Price
-            });
-        }
-
-        // 🔹 Call PostgreSQL function to save order
-        const query = `
-            SELECT public.fn_save_order(
-                $1, $2, $3, $4, 0,
-                $5, $6, $7, $8, $9, $10
-            ) AS result;
-        `;
-
-        const values = [
-            userId,
-            shippingAddress,
-            paymentMethod,
-            JSON.stringify(transformedOrderItems),
-            coupenId,
-            orderStatus,
-            paymentStatus,
-            orderDate,
-            isActive,
-            transactionId
-        ];
-
-        const { rows } = await pool.query(query, values);
-
-        // 🔹 Reduce stock in ProductSize after order is confirmed
-        for (const item of transformedOrderItems) {
-            await pool.query(
-                `UPDATE public."ProductSize" SET "Stock" = "Stock" - $1 WHERE "ProductID" = $2`,
-                [item.quantity, item.productid]
-            );
-        }
-
-        return {
-            success: true,
-            message: "Order saved successfully.",
-            orderId: rows[0].result
-        };
-
-    } catch (error) {
-        console.error("Save Order Error:", error);
-        return {
-            success: false,
-            message: error.message || "Internal Server Error"
-        };
+    if (!shippingAddress || !paymentMethod || orderItems.length === 0) {
+      throw new Error("Missing required fields or empty order items.");
     }
+
+    await client.query('BEGIN');
+
+    // Validate and transform order items
+    const transformedOrderItems = [];
+    for (const item of orderItems) {
+      const productId = item.ProductID || item.productid;
+      const quantity = item.Quantity || item.quantity;
+
+      const { rows } = await client.query(
+        `SELECT "ID", "Price", "Stock"
+         FROM public."ProductSize"
+         WHERE "ProductID" = $1 AND "Stock" >= $2 AND "IsActive" = true
+         LIMIT 1`,
+        [productId, quantity]
+      );
+
+      if (rows.length === 0) {
+        throw new Error(`Product with ID ${productId} not found, inactive, or insufficient stock`);
+      }
+
+      transformedOrderItems.push({
+        productid: productId,
+        quantity,
+        price: rows[0].Price
+      });
+    }
+
+    // Resolve coupon: prefer numeric ID from frontend, else resolve from couponCode
+    let couponId = frontCouponId;
+    console.log({couponId})
+    if (!couponId && couponCode) {
+      const { rows } = await client.query(
+        `SELECT "ID" FROM public."CouponsMaster" WHERE UPPER("Code") = $1 AND "IsActive" = true LIMIT 1`,
+        [couponCode.toUpperCase()]
+      );
+      console.log({rows});
+      
+      if (rows.length > 0) couponId = rows[0].ID;
+    }
+
+    console.log("Resolved couponId:", couponId);
+
+    // Save order via PostgreSQL function
+    const query = `
+      SELECT public.fn_save_order(
+        $1, $2, $3, $4, $5,
+        $6, $7, $8, $9, $10, $11
+      ) AS order_id;
+    `;
+
+    const values = [
+      userId,
+      shippingAddress,
+      paymentMethod,
+      JSON.stringify(transformedOrderItems),
+      0,
+      couponId,
+      orderStatus,
+      paymentStatus,
+      orderDate,
+      isActive,
+      transactionId
+    ];
+
+    const { rows } = await client.query(query, values);
+    const orderId = rows[0].order_id;
+
+    // Reduce stock
+    for (const item of transformedOrderItems) {
+      await client.query(
+        `UPDATE public."ProductSize" SET "Stock" = "Stock" - $1 WHERE "ProductID" = $2`,
+        [item.quantity, item.productid]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    return {
+      success: true,
+      message: "Order saved successfully.",
+      orderId,
+      couponId
+    };
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error("Save Order Error:", error);
+    return {
+      success: false,
+      message: error.message || "Internal Server Error"
+    };
+  } finally {
+    client.release();
+  }
 };
+
+
 
 // ✅ Express route handler
 const saveOrder = async (req, res) => {
@@ -390,6 +418,8 @@ const saveOrder = async (req, res) => {
                 message: "Unauthorized: User ID missing from token."
             });
         }
+
+        console.log("Request body received:", JSON.stringify(req.body, null, 2));
 
         const result = await saveOrderData(req.body, userId);
 
