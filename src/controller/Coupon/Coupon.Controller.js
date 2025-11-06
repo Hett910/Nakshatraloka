@@ -336,16 +336,16 @@ const ValidateCoupon = async (req, res) => {
     }
 
     // 5️⃣ Optional: Check per-user usage (if applicable)
-    const userUsageRes = await pool.query(
-      `SELECT COUNT(*) FROM "CoupenUsage" WHERE "CouponID" = $1 AND "UserID" = $2`,
-      [coupon.ID, userId]
-    );
-    if (parseInt(userUsageRes.rows[0].count) > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "You have already used this coupon.",
-      });
-    }
+    // const userUsageRes = await pool.query(
+    //   `SELECT COUNT(*) FROM "CoupenUsage" WHERE "CouponID" = $1 AND "UserID" = $2`,
+    //   [coupon.ID, userId]
+    // );
+    // if (parseInt(userUsageRes.rows[0].count) > 0) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "You have already used this coupon.",
+    //   });
+    // }
 
     // 6️⃣ Everything valid — return coupon info
     return res.status(200).json({
