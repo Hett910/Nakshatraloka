@@ -12,8 +12,8 @@ const { connectRedis, redis } = require('./utils/redisClient.js');
 
 dotenv.config({ debug: false });
 const app = express();
-// app.use(cors({ origin: "http://localhost:5173" }));
-app.use(cors({ origin: "*", credentials: true, methods: ['GET', 'POST', 'PATCH', 'DELETE'] }));
+app.use(cors({ origin: "http://localhost:5173" }));
+// app.use(cors({ origin: "*", credentials: true, methods: ['GET', 'POST', 'PATCH', 'DELETE'] }));
 
 
 // Disable Express signature

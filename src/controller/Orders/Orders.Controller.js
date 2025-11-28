@@ -1,6 +1,5 @@
 const express = require("express");
 const pool = require("../../utils/PostgraceSql.Connection");
-const { redis } = require("../../utils/redisClient");
 const Razorpay = require("razorpay")
 
 // Save or update order
