@@ -40,5 +40,8 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 module.exports = {
-    uploadMiddleware: upload.array('images', 5) // max 5 files
+    uploadMiddleware: upload.fields([
+        { name: "images", maxCount: 5 },
+        { name: "videos", maxCount: 5 }
+    ])
 };
