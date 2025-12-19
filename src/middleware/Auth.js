@@ -1,28 +1,23 @@
-const jwt = require('jsonwebtoken');
+const jwt = require("jsonwebtoken");
 
+const auth = (req, res, next) => {
+  const token = req.header("Authorization");
 
-const auth = async (req, res, next) => {
+  if (!token) {
+    return res.status(401).json({ error: "Token not found" });
+  }
 
-    const token = req.header("Authorization");
-    if (!token) {
-        res.status(401).json({ error: "Token not found" })
-    }
+  try {
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET_KEY_FOR_NAK
+    );
 
-    try {
-        jwt.verify(token, process.env.JWT_SECRET_KEY_FOR_NAK, (err, decoded) => {
-            if (err) {
-                return res.status(403).json({ message: "Invalid or expired token" });
-            }
-            req.user = decoded;
-            next();
-        });
-
-    } catch (error) {
-        res.status(401).json({ message: error.message })
-        res.status(401).json({
-
-        })
-    }
-}
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(403).json({ message: "Invalid or expired token" });
+  }
+};
 
 module.exports = auth;

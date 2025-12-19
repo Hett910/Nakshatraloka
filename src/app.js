@@ -20,6 +20,10 @@ app.use(cors({ origin: "http://localhost:5173" }));
 app.disable("x-powered-by");
 
 // for parsig data
+
+app.use("/api/razorpay/webhook", express.raw({ type: "application/json" }));
+
+
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ limit: "5mb", extended: true }));
 app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -63,11 +67,9 @@ app.use(hpp());
 })();
 
 
+app.use(passport.initialize());
 app.use("/", MasterRouter);
 
-
-
-app.use(passport.initialize());
 
 // Default Router Message
 app.get("/", (req, res) => {
@@ -80,7 +82,7 @@ app.get("/", (req, res) => {
 
 //For Throwing error about not found
 app.use(async (req, res, next) => {
-    next(createError.NotFound("Invalid url-please refer document."));
+    next(createError.NotFound("Invalid url-please refer document.", req.url));
 });
 
 // Error Handler

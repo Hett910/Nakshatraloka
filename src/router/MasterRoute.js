@@ -12,6 +12,7 @@ const ConsultType = require('./Consaultation/ConsultationsType.Route')
 const Cart = require('./Cart/Cart.route');
 const review = require('./Review/Review.Route')
 const ShipRocket = require('./ShipRocket/ShipRocket.Route')
+const Admin = require('./Admin/Admin.route');
 
 router.use(
     '/api',
@@ -26,7 +27,8 @@ router.use(
     Product,
     Cart,
     review,
-    ShipRocket
+    ShipRocket,
+    Admin
 )
 
 module.exports = router;
