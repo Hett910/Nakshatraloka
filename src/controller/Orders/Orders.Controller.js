@@ -86,7 +86,8 @@ const createRazorpayOrder = async (req, res) => {
         }
 
         const options = {
-            amount: amount, // convert to paise
+            amount: amount * 100,
+            // convert to paise
             currency: "INR",
             receipt: "receipt_" + Date.now(),
         };
@@ -291,118 +292,118 @@ const createRazorpayOrder = async (req, res) => {
 
 // 🔹 Save order function
 const saveOrderData = async (orderData, userId, transactionId = null) => {
-  const client = await pool.connect();
-  try {
-    const {
-      shippingAddress,
-      paymentMethod,
-      couponCode = null,   // Optional coupon code from frontend
-      couponId: frontCouponId = null, // Optional numeric coupon ID from frontend
-      orderItems = [],
-      orderStatus = 'Pending',
-      paymentStatus = 'Pending',
-      orderDate = new Date().toISOString(),
-      isActive = true
-    } = orderData;
+    const client = await pool.connect();
+    try {
+        const {
+            shippingAddress,
+            paymentMethod,
+            couponCode = null,   // Optional coupon code from frontend
+            couponId: frontCouponId = null, // Optional numeric coupon ID from frontend
+            orderItems = [],
+            orderStatus = 'Pending',
+            paymentStatus = 'Pending',
+            orderDate = new Date().toISOString(),
+            isActive = true
+        } = orderData;
 
-    if (!shippingAddress || !paymentMethod || orderItems.length === 0) {
-      throw new Error("Missing required fields or empty order items.");
-    }
+        if (!shippingAddress || !paymentMethod || orderItems.length === 0) {
+            throw new Error("Missing required fields or empty order items.");
+        }
 
-    await client.query('BEGIN');
+        await client.query('BEGIN');
 
-    // Validate and transform order items
-    const transformedOrderItems = [];
-    for (const item of orderItems) {
-      const productId = item.ProductID || item.productid;
-      const quantity = item.Quantity || item.quantity;
+        // Validate and transform order items
+        const transformedOrderItems = [];
+        for (const item of orderItems) {
+            const productId = item.ProductID || item.productid;
+            const quantity = item.Quantity || item.quantity;
 
-      const { rows } = await client.query(
-        `SELECT "ID", "Price", "Stock"
+            const { rows } = await client.query(
+                `SELECT "ID", "Price", "Stock"
          FROM public."ProductSize"
          WHERE "ProductID" = $1 AND "Stock" >= $2 AND "IsActive" = true
          LIMIT 1`,
-        [productId, quantity]
-      );
+                [productId, quantity]
+            );
 
-      if (rows.length === 0) {
-        throw new Error(`Product with ID ${productId} not found, inactive, or insufficient stock`);
-      }
+            if (rows.length === 0) {
+                throw new Error(`Product with ID ${productId} not found, inactive, or insufficient stock`);
+            }
 
-      transformedOrderItems.push({
-        productid: productId,
-        quantity,
-        price: rows[0].Price
-      });
-    }
+            transformedOrderItems.push({
+                productid: productId,
+                quantity,
+                price: rows[0].Price
+            });
+        }
 
-    // Resolve coupon: prefer numeric ID from frontend, else resolve from couponCode
-    let couponId = frontCouponId;
-    console.log({couponId})
-    if (!couponId && couponCode) {
-      const { rows } = await client.query(
-        `SELECT "ID" FROM public."CouponsMaster" WHERE UPPER("Code") = $1 AND "IsActive" = true LIMIT 1`,
-        [couponCode.toUpperCase()]
-      );
-      console.log({rows});
-      
-      if (rows.length > 0) couponId = rows[0].ID;
-    }
+        // Resolve coupon: prefer numeric ID from frontend, else resolve from couponCode
+        let couponId = frontCouponId;
+        console.log({ couponId })
+        if (!couponId && couponCode) {
+            const { rows } = await client.query(
+                `SELECT "ID" FROM public."CouponsMaster" WHERE UPPER("Code") = $1 AND "IsActive" = true LIMIT 1`,
+                [couponCode.toUpperCase()]
+            );
+            console.log({ rows });
 
-    console.log("Resolved couponId:", couponId);
+            if (rows.length > 0) couponId = rows[0].ID;
+        }
 
-    // Save order via PostgreSQL function
-    const query = `
+        console.log("Resolved couponId:", couponId);
+
+        // Save order via PostgreSQL function
+        const query = `
       SELECT public.fn_save_order(
         $1, $2, $3, $4, $5,
         $6, $7, $8, $9, $10, $11
       ) AS order_id;
     `;
 
-    const values = [
-      userId,
-      shippingAddress,
-      paymentMethod,
-      JSON.stringify(transformedOrderItems),
-      0,
-      couponId,
-      orderStatus,
-      paymentStatus,
-      orderDate,
-      isActive,
-      transactionId
-    ];
+        const values = [
+            userId,
+            shippingAddress,
+            paymentMethod,
+            JSON.stringify(transformedOrderItems),
+            0,
+            couponId,
+            orderStatus,
+            paymentStatus,
+            orderDate,
+            isActive,
+            transactionId
+        ];
 
-    const { rows } = await client.query(query, values);
-    const orderId = rows[0].order_id;
+        const { rows } = await client.query(query, values);
+        const orderId = rows[0].order_id;
 
-    // Reduce stock
-    for (const item of transformedOrderItems) {
-      await client.query(
-        `UPDATE public."ProductSize" SET "Stock" = "Stock" - $1 WHERE "ProductID" = $2`,
-        [item.quantity, item.productid]
-      );
+        // Reduce stock
+        for (const item of transformedOrderItems) {
+            await client.query(
+                `UPDATE public."ProductSize" SET "Stock" = "Stock" - $1 WHERE "ProductID" = $2`,
+                [item.quantity, item.productid]
+            );
+        }
+
+        await client.query('COMMIT');
+
+        return {
+            success: true,
+            message: "Order saved successfully.",
+            orderId,
+            couponId
+        };
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error("Save Order Error:", error);
+        return {
+            success: false,
+            message: error.message || "Internal Server Error"
+        };
+    } finally {
+        client.release();
     }
-
-    await client.query('COMMIT');
-
-    return {
-      success: true,
-      message: "Order saved successfully.",
-      orderId,
-      couponId
-    };
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error("Save Order Error:", error);
-    return {
-      success: false,
-      message: error.message || "Internal Server Error"
-    };
-  } finally {
-    client.release();
-  }
 };
 
 
