@@ -13,6 +13,7 @@ const Cart = require('./Cart/Cart.route');
 const review = require('./Review/Review.Route')
 const ShipRocket = require('./ShipRocket/ShipRocket.Route')
 const Admin = require('./Admin/Admin.route');
+const Razorpay = require('./Razorpay/Razorpay.route');
 
 router.use(
     '/api',
@@ -28,7 +29,8 @@ router.use(
     Cart,
     review,
     ShipRocket,
-    Admin
+    Admin,
+    Razorpay
 )
 
 module.exports = router;

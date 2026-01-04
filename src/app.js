@@ -21,8 +21,10 @@ app.disable("x-powered-by");
 
 // for parsig data
 
-app.use("/api/razorpay/webhook", express.raw({ type: "application/json" }));
-
+app.use(
+  "/api/razorpay/webhook",
+  express.raw({ type: "application/json" })
+);
 
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ limit: "5mb", extended: true }));
