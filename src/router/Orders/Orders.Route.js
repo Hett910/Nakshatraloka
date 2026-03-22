@@ -15,6 +15,7 @@ router.post('/getOrderById/:id', auth, Order.getOrderById);
 router.post('/updateOrderStatus/:id/status',auth,Order.updateOrderStatus);
 // router.post('/getAllOrders', auth, Order.getAllOrders);
 
+router.get('/orderHistory', auth, Order.getOrderHistory);
 
 // Wishlist
 // router.post('/manageWishlist', auth, saveWishlist);

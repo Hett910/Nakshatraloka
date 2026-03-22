@@ -649,6 +649,91 @@ const updateOrderStatus = async (req, res) => {
     }
 };
 
+const getOrderHistory = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: "Unauthorized"
+            });
+        }
+
+        const query = `
+           SELECT 
+    om."ID" AS "orderId",
+    om."OrderDate" AS "orderDate",
+    om."OrderStatus" AS "orderStatus",
+    om."PaymentStatus" AS "paymentStatus",
+    om."TotalAmount" AS "totalAmount",
+    om."UpdatedDate" AS "updatedDate",
+
+    oi."ID" AS "orderItemId",
+    oi."ProductID" AS "productId",
+    oi."Quantity" AS "quantity",
+    oi."UnitPrice" AS "unitPrice",
+    oi."TotalAmount" AS "itemTotal",
+
+    pm."Name" AS "productName"
+            FROM "OrderMaster" om
+            LEFT JOIN "OrderItems" oi 
+                ON om."ID" = oi."OrderID"
+            LEFT JOIN "ProductMaster" pm
+                ON pm."ID" = oi."ProductID"
+            WHERE om."UserID" = $1
+            AND om."IsActive" = true
+            ORDER BY om."ID" DESC;
+        `;
+
+        const { rows } = await pool.query(query, [userId]);
+
+        const ordersMap = {};
+
+      rows.forEach(row => {
+    if (!ordersMap[row.orderId]) {
+        const isDelivered = row.orderStatus === "Completed";
+
+        ordersMap[row.orderId] = {
+            orderId: `${row.orderId}`,
+            orderDate: row.orderDate,
+            orderStatus: row.orderStatus,
+            paymentStatus: row.paymentStatus,
+            totalAmount: row.totalAmount,
+
+            displayStatus: isDelivered ? "Delivered" : row.orderStatus,
+            isDelivered,
+            deliveredAt: isDelivered ? row.updatedDate : null,
+
+            items: []
+        };
+    }
+
+    if (row.orderItemId) {
+        ordersMap[row.orderId].items.push({
+            productId: row.productId,
+            productName: row.productName, // ✅ FIXED
+            quantity: row.quantity,
+            unitPrice: row.unitPrice,
+            totalAmount: row.itemTotal
+        });
+    }
+});
+
+        return res.status(200).json({
+            success: true,
+            data: Object.values(ordersMap)
+        });
+
+    } catch (error) {
+        // console.error("Order History Error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error"
+        });
+    }
+};
+
 module.exports = {
     Order: {
         saveOrder,
@@ -656,6 +741,7 @@ module.exports = {
         createRazorpayOrder,
         listAllOrders,
         getOrderById,
-        updateOrderStatus
+        updateOrderStatus,
+        getOrderHistory
     }
 }; 

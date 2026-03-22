@@ -95,13 +95,14 @@ const saveCategory = async (req, res) => {
             updatedBy,
             isActive,
             isFeatured,
-            image
         } = req.body;
 
-        let imagePath = image || null;
-        if (req.files && req.files.length > 0) {
-            imagePath = `/${req.files[0].filename}`;
+        let imagePath =  null;
+
+        if (req.files?.images?.length > 0) {
+            imagePath = `/${req.files.images[0].filename}`;
         }
+
 
         const creatorId = id ? null : createdBy || user.id;
         const updaterId = user.id;
