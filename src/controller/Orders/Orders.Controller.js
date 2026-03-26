@@ -315,8 +315,11 @@ const saveOrderData = async (orderData, userId, transactionId = null) => {
         // Validate and transform order items
         const transformedOrderItems = [];
         for (const item of orderItems) {
-            const productId = item.ProductID || item.productid;
+            const productId =
+                item.ProductID || item.productid || item.productId;
             const quantity = item.Quantity || item.quantity;
+
+
 
             const { rows } = await client.query(
                 `SELECT "ID", "Price", "Stock"
@@ -447,7 +450,7 @@ const listAllOrders = async (req, res) => {
             query = `
                 SELECT *
                 FROM "V_OrderDetails"
-                ORDER BY "OrderID" ASC
+                ORDER BY "OrderID" DESC
             `;
         } else if (user.role === "customer") {
             // cacheKey = `orders:user:${user.id}`;
@@ -455,7 +458,7 @@ const listAllOrders = async (req, res) => {
                 SELECT *
                 FROM "V_OrderDetails"
                 WHERE "UserID" = $1 AND "IsActive" = true
-                ORDER BY "OrderID" ASC
+                ORDER BY "OrderID" DESC
             `;
             params.push(user.id);
         } else {
@@ -690,35 +693,35 @@ const getOrderHistory = async (req, res) => {
 
         const ordersMap = {};
 
-      rows.forEach(row => {
-    if (!ordersMap[row.orderId]) {
-        const isDelivered = row.orderStatus === "Completed";
+        rows.forEach(row => {
+            if (!ordersMap[row.orderId]) {
+                const isDelivered = row.orderStatus === "Completed";
 
-        ordersMap[row.orderId] = {
-            orderId: `${row.orderId}`,
-            orderDate: row.orderDate,
-            orderStatus: row.orderStatus,
-            paymentStatus: row.paymentStatus,
-            totalAmount: row.totalAmount,
+                ordersMap[row.orderId] = {
+                    orderId: `${row.orderId}`,
+                    orderDate: row.orderDate,
+                    orderStatus: row.orderStatus,
+                    paymentStatus: row.paymentStatus,
+                    totalAmount: row.totalAmount,
 
-            displayStatus: isDelivered ? "Delivered" : row.orderStatus,
-            isDelivered,
-            deliveredAt: isDelivered ? row.updatedDate : null,
+                    displayStatus: isDelivered ? "Delivered" : row.orderStatus,
+                    isDelivered,
+                    deliveredAt: isDelivered ? row.updatedDate : null,
 
-            items: []
-        };
-    }
+                    items: []
+                };
+            }
 
-    if (row.orderItemId) {
-        ordersMap[row.orderId].items.push({
-            productId: row.productId,
-            productName: row.productName, // ✅ FIXED
-            quantity: row.quantity,
-            unitPrice: row.unitPrice,
-            totalAmount: row.itemTotal
+            if (row.orderItemId) {
+                ordersMap[row.orderId].items.push({
+                    productId: row.productId,
+                    productName: row.productName, // ✅ FIXED
+                    quantity: row.quantity,
+                    unitPrice: row.unitPrice,
+                    totalAmount: row.itemTotal
+                });
+            }
         });
-    }
-});
 
         return res.status(200).json({
             success: true,
